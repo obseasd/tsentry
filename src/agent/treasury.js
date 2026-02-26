@@ -4,6 +4,7 @@
 import { createWalletFromEnv } from '../evm/wallet.js'
 import { AaveLending } from '../evm/aave.js'
 import { UniswapSwap } from '../evm/swap.js'
+import { Usdt0Bridge } from '../evm/bridge.js'
 import { calculatePortfolioValue, getPrices } from '../evm/pricing.js'
 import { STRATEGIES } from './strategies.js'
 
@@ -16,6 +17,7 @@ export class TreasuryAgent {
     this.wallet = null
     this.aave = null
     this.swap = null
+    this.bridge = null
     this.strategy = null
     this.active = false
     this.paused = false
@@ -27,6 +29,8 @@ export class TreasuryAgent {
     this.portfolio = null
     this.prices = {}
     this.swapPairs = []
+    this.bridgeChains = []
+    this.bridgeRoutes = []
 
     // Logging
     this.actionLog = []
@@ -58,11 +62,17 @@ export class TreasuryAgent {
       this.swapPairs = await this.swap.getAvailablePairs()
     } catch { this.swapPairs = [] }
 
+    // USDT0 bridge (mainnet — quote-only from testnet)
+    this.bridge = new Usdt0Bridge({ signer: this.wallet.signer })
+    this.bridgeChains = this.bridge.getSupportedChains()
+    this.bridgeRoutes = this.bridge.getRoutes('ethereum')
+
     await this.refresh()
     this.log('init', `Agent initialized — wallet ${this.wallet.address}`, {
       balances: this.balances,
       supplied: this.supplied,
-      swapPairs: this.swapPairs.map(p => `${p.tokenA}/${p.tokenB}`)
+      swapPairs: this.swapPairs.map(p => `${p.tokenA}/${p.tokenB}`),
+      bridgeChains: this.bridgeChains.map(c => c.name)
     })
 
     return this
@@ -453,6 +463,8 @@ export class TreasuryAgent {
       prices: this.prices,
       lendingPct: this._currentLendingPct(),
       swapPairs: this.swapPairs,
+      bridgeChains: this.bridgeChains,
+      bridgeRoutes: this.bridgeRoutes,
       recentActions: this.actionLog.slice(-50),
       recentErrors: this.errors.slice(-10)
     }

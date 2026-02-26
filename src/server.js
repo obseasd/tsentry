@@ -182,6 +182,52 @@ app.post('/api/swap/execute', async (req, res) => {
   }
 })
 
+// ─── API: Bridge ───
+
+app.get('/api/bridge/chains', (req, res) => {
+  res.json({ chains: agent.bridgeChains, routes: agent.bridgeRoutes })
+})
+
+app.post('/api/bridge/quote', async (req, res) => {
+  try {
+    const { sourceChain, targetChain, amount } = req.body
+    if (!sourceChain || !targetChain || !amount) {
+      return res.status(400).json({ error: 'sourceChain, targetChain, and amount required' })
+    }
+    const quote = await agent.bridge.quote(sourceChain, targetChain, parseFloat(amount))
+    res.json({ ok: true, ...quote })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+app.post('/api/bridge/quote-all', async (req, res) => {
+  try {
+    const { sourceChain, amount } = req.body
+    if (!sourceChain || !amount) {
+      return res.status(400).json({ error: 'sourceChain and amount required' })
+    }
+    const quotes = await agent.bridge.quoteAllRoutes(sourceChain, parseFloat(amount))
+    res.json({ ok: true, quotes })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+app.post('/api/bridge/execute', async (req, res) => {
+  try {
+    const { targetChain, amount, recipient } = req.body
+    if (!targetChain || !amount) {
+      return res.status(400).json({ error: 'targetChain and amount required' })
+    }
+    const result = await agent.bridge.bridge(targetChain, parseFloat(amount), recipient)
+    agent.log('manual_bridge', `Bridge ${amount} USDT0 → ${targetChain}`, result)
+    res.json({ ok: true, ...result })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
 // ─── Boot ───
 
 async function boot () {

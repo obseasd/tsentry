@@ -202,6 +202,45 @@
       </div>
     </div>
 
+    <!-- Middle: Bridge -->
+    <div class="grid-main">
+      <div class="card">
+        <h3>USDT0 Bridge (LayerZero)</h3>
+        <div class="quick-form" style="flex-direction:column;gap:0.75rem">
+          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+            <select id="bridgeSrc">
+              <option value="ethereum">Ethereum</option>
+              <option value="arbitrum">Arbitrum</option>
+              <option value="berachain">Berachain</option>
+              <option value="ink">Ink</option>
+            </select>
+            <span style="color:var(--muted)">→</span>
+            <select id="bridgeDst">
+              <option value="arbitrum">Arbitrum</option>
+              <option value="ethereum">Ethereum</option>
+              <option value="berachain">Berachain</option>
+              <option value="ink">Ink</option>
+            </select>
+            <input type="number" id="bridgeAmt" placeholder="USDT0 Amount" style="width:130px">
+            <button onclick="doBridgeQuote()">Quote</button>
+            <button class="primary" onclick="doBridge()" style="border-color:var(--green);color:var(--green)">Bridge</button>
+          </div>
+          <div id="bridgeQuote" style="font-size:0.8rem;color:var(--muted)">Select route and amount, then Quote</div>
+        </div>
+        <div style="margin-top:0.75rem">
+          <h3>Supported Chains</h3>
+          <div id="bridgeChains" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-top:0.3rem"></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Route Comparison</h3>
+        <div id="bridgeRoutes" style="font-size:0.8rem;color:var(--muted)">
+          Click "Quote All" to compare fees across routes.
+        </div>
+        <button onclick="doBridgeQuoteAll()" style="margin-top:0.5rem;padding:0.3rem 0.6rem;border-radius:5px;border:1px solid var(--border);background:var(--card);color:var(--text);cursor:pointer;font-family:inherit;font-size:0.75rem">Quote All Routes</button>
+      </div>
+    </div>
+
     <!-- Bottom: Log + Prices -->
     <div class="grid-bottom">
       <div class="card">
@@ -253,11 +292,12 @@
 
     async function refresh() {
       try {
-        const [status, portfolio, actions, swapData] = await Promise.all([
+        const [status, portfolio, actions, swapData, bridgeData] = await Promise.all([
           api('GET', '/api/status'),
           api('GET', '/api/portfolio'),
           api('GET', '/api/actions?limit=80'),
-          api('GET', '/api/swap/pairs')
+          api('GET', '/api/swap/pairs'),
+          api('GET', '/api/bridge/chains')
         ]);
 
         // Status badge
@@ -389,6 +429,14 @@
             </div>
           `).join('');
         }
+
+        // Bridge chains
+        const chainsEl = document.getElementById('bridgeChains');
+        if (bridgeData.chains?.length > 0) {
+          chainsEl.innerHTML = bridgeData.chains.map(c =>
+            `<span class="tag supplied" style="margin:0.15rem 0">${c.name} <span style="color:var(--muted);font-size:0.6rem">EID:${c.eid}</span></span>`
+          ).join('');
+        }
       } catch (e) {
         console.error('Refresh error:', e);
       }
@@ -458,6 +506,63 @@
         await refresh();
       } catch (e) {
         quoteEl.innerHTML = `<span style="color:var(--red)">Swap failed: ${e.message}</span>`;
+      }
+    }
+
+    // Bridge functions
+    async function doBridgeQuote() {
+      const src = document.getElementById('bridgeSrc').value;
+      const dst = document.getElementById('bridgeDst').value;
+      const amount = parseFloat(document.getElementById('bridgeAmt').value);
+      const el = document.getElementById('bridgeQuote');
+      if (!amount || amount <= 0) { el.textContent = 'Enter a valid amount'; return; }
+      if (src === dst) { el.textContent = 'Select different chains'; return; }
+      el.textContent = 'Quoting...';
+      try {
+        const res = await api('POST', '/api/bridge/quote', { sourceChain: src, targetChain: dst, amount });
+        if (res.error) { el.innerHTML = `<span style="color:var(--red)">${res.error}</span>`; return; }
+        el.innerHTML = `<span style="color:var(--green)">${amount} USDT0 ${res.sourceChain} → ${res.targetChain}</span>`
+          + `<br><span style="color:var(--muted);font-size:0.7rem">Fee: ${res.nativeFee.toFixed(8)} ${res.nativeSymbol} | Min received: ${res.minReceived} USDT0</span>`;
+      } catch (e) {
+        el.innerHTML = `<span style="color:var(--red)">Quote failed: ${e.message}</span>`;
+      }
+    }
+
+    async function doBridgeQuoteAll() {
+      const src = document.getElementById('bridgeSrc').value;
+      const amount = parseFloat(document.getElementById('bridgeAmt').value) || 100;
+      const el = document.getElementById('bridgeRoutes');
+      el.innerHTML = '<span style="color:var(--yellow)">Quoting all routes...</span>';
+      try {
+        const res = await api('POST', '/api/bridge/quote-all', { sourceChain: src, amount });
+        if (res.error) { el.innerHTML = `<span style="color:var(--red)">${res.error}</span>`; return; }
+        if (!res.quotes?.length) { el.innerHTML = '<span style="color:var(--muted)">No routes available</span>'; return; }
+        el.innerHTML = res.quotes.map(q =>
+          `<div style="display:flex;justify-content:space-between;padding:0.35rem 0;border-bottom:1px solid #ffffff06">
+            <span>${q.sourceChain} → <b>${q.targetChain}</b></span>
+            <span style="color:var(--green)">${q.nativeFee.toFixed(8)} ${q.nativeSymbol}</span>
+          </div>`
+        ).join('');
+      } catch (e) {
+        el.innerHTML = `<span style="color:var(--red)">Failed: ${e.message}</span>`;
+      }
+    }
+
+    async function doBridge() {
+      const dst = document.getElementById('bridgeDst').value;
+      const amount = parseFloat(document.getElementById('bridgeAmt').value);
+      const el = document.getElementById('bridgeQuote');
+      if (!amount || amount <= 0) { el.textContent = 'Enter a valid amount'; return; }
+      el.innerHTML = '<span style="color:var(--yellow)">Bridging... (this may take a moment)</span>';
+      try {
+        const res = await api('POST', '/api/bridge/execute', { targetChain: dst, amount });
+        if (res.error) { el.innerHTML = `<span style="color:var(--red)">${res.error}</span>`; return; }
+        el.innerHTML = `<span style="color:var(--green)">Bridged ${res.amount} USDT0 → ${res.targetChain}</span>`
+          + `<br><span style="color:var(--muted);font-size:0.7rem">TX: ${res.tx?.slice(0,10)}... | Fee: ${res.nativeFee} ${res.nativeSymbol}</span>`;
+        document.getElementById('bridgeAmt').value = '';
+        await refresh();
+      } catch (e) {
+        el.innerHTML = `<span style="color:var(--red)">Bridge failed: ${e.message}</span>`;
       }
     }
 
