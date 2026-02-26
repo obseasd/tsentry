@@ -1,231 +1,427 @@
 // Tsentry — Treasury Agent Core
-// Autonomous multi-chain treasury management logic
+// Autonomous EVM treasury management with real on-chain execution
+
+import { createWalletFromEnv } from '../evm/wallet.js'
+import { AaveLending } from '../evm/aave.js'
+import { calculatePortfolioValue, getPrices } from '../evm/pricing.js'
+import { STRATEGIES } from './strategies.js'
 
 /**
- * TreasuryAgent — orchestrates wallet monitoring, rebalancing,
- * yield farming, and risk management through WDK MCP tools.
+ * TreasuryAgent — full autonomous loop:
+ *   refresh → evaluate → propose → execute → log → sleep → repeat
  */
 export class TreasuryAgent {
   constructor () {
-    /** @type {Map<string, object>} chain -> wallet state */
-    this.wallets = new Map()
-
-    /** @type {Array<object>} action history */
-    this.actionLog = []
-
-    /** @type {object|null} current strategy config */
+    this.wallet = null
+    this.aave = null
     this.strategy = null
-
-    /** @type {boolean} whether agent is actively managing */
     this.active = false
+    this.paused = false
+
+    // State
+    this.balances = {}
+    this.supplied = {}
+    this.aaveAccount = null
+    this.portfolio = null
+    this.prices = {}
+
+    // Logging
+    this.actionLog = []
+    this.errors = []
+
+    // Loop config
+    this.pollIntervalMs = 60_000 // 1 min
+    this._timer = null
+    this._cycleCount = 0
   }
 
-  /**
-   * Initialize agent with wallet data from MCP server
-   * @param {object} mcpClient - MCP client connected to tsentry-wdk
-   */
-  async init (mcpClient) {
-    this.mcp = mcpClient
+  /** Initialize with real wallet + Aave connection */
+  async init () {
+    this.wallet = createWalletFromEnv()
 
-    // Get wallet addresses for each chain
-    const address = await this.callTool('get_address', { blockchain: 'ethereum' })
-    this.wallets.set('ethereum', {
-      address: address,
-      balance: null,
-      tokens: {},
-      positions: { lending: [], swap: [] }
+    this.aave = new AaveLending({
+      signer: this.wallet.signer,
+      poolAddress: process.env.AAVE_POOL,
+      tokens: this.wallet.tokens
     })
 
-    await this.refreshBalances()
-    this.log('init', 'Agent initialized', { chains: [...this.wallets.keys()] })
+    await this.refresh()
+    this.log('init', `Agent initialized — wallet ${this.wallet.address}`, {
+      balances: this.balances,
+      supplied: this.supplied
+    })
+
+    return this
   }
 
-  /**
-   * Call an MCP tool on the WDK server
-   */
-  async callTool (name, args = {}) {
-    const result = await this.mcp.callTool({ name, arguments: args })
-    return result.content?.[0]?.text ?? result
-  }
+  /** Refresh all on-chain data */
+  async refresh () {
+    try {
+      // Wallet balances
+      this.balances = await this.wallet.getAllBalances()
 
-  /**
-   * Refresh all wallet balances
-   */
-  async refreshBalances () {
-    for (const [chain, wallet] of this.wallets) {
-      const balance = await this.callTool('get_balance', { blockchain: chain })
-      wallet.balance = balance
+      // Aave positions
+      this.supplied = await this.aave.getAllSupplied()
+      this.aaveAccount = await this.aave.getAccountData()
 
-      const usdtBalance = await this.callTool('get_token_balance', {
-        blockchain: chain,
-        token: 'USDT'
-      })
-      wallet.tokens.USDT = usdtBalance
+      // Live prices
+      this.prices = await getPrices(['ETH', 'BTC', 'USDT', 'DAI', 'USDC'])
+
+      // Portfolio value (wallet + supplied)
+      const combined = { ...this.balances }
+      for (const [sym, amt] of Object.entries(this.supplied)) {
+        combined[`a${sym}`] = amt // aUSDT, aDAI, etc.
+      }
+      this.portfolio = await calculatePortfolioValue(combined)
+    } catch (e) {
+      this.logError('refresh', e)
     }
   }
 
-  /**
-   * Set the treasury strategy
-   * @param {object} config - Strategy configuration
-   * @param {number} config.targetYield - Target APY percentage
-   * @param {number} config.maxRisk - Max risk tolerance (0-100)
-   * @param {object} config.allocations - Target allocation percentages
-   */
-  setStrategy (config) {
-    this.strategy = {
-      targetYield: config.targetYield || 5,
-      maxRisk: config.maxRisk || 30,
-      allocations: config.allocations || {
-        lending: 40,
-        liquidity: 30,
-        reserve: 30
-      },
-      rebalanceThreshold: config.rebalanceThreshold || 5
+  /** Set strategy by name or config */
+  setStrategy (nameOrConfig) {
+    if (typeof nameOrConfig === 'string') {
+      const strat = STRATEGIES[nameOrConfig.toUpperCase()]
+      if (!strat) throw new Error(`Unknown strategy: ${nameOrConfig}`)
+      this.strategy = { ...strat }
+    } else {
+      this.strategy = { ...nameOrConfig }
     }
-    this.log('strategy', 'Strategy updated', this.strategy)
+    this.log('strategy', `Strategy set: ${this.strategy.name}`, this.strategy)
   }
 
   /**
-   * Evaluate current positions and decide actions
-   * @returns {Array<object>} proposed actions
+   * Evaluate current state and generate proposed actions
+   * @returns {Array<object>} actions
    */
   async evaluate () {
     if (!this.strategy) return []
-
     const actions = []
-    await this.refreshBalances()
 
-    for (const [chain, wallet] of this.wallets) {
-      const usdtBalance = parseFloat(wallet.tokens.USDT || '0')
+    // Compute total portfolio value in USD terms
+    const ethPrice = this.prices?.ETH?.usd || 2600
+    const walletUSD = (this.balances.USDT || 0) + (this.balances.DAI || 0) +
+      (this.balances.USDC || 0) + (this.balances.WETH || 0) * ethPrice +
+      (this.balances.ETH || 0) * ethPrice
+    const suppliedUSD = (this.supplied.USDT || 0) + (this.supplied.DAI || 0) +
+      (this.supplied.USDC || 0) + (this.supplied.WETH || 0) * ethPrice
+    const totalUSD = walletUSD + suppliedUSD
 
-      // Check if we have idle USDT that should be deployed
-      if (usdtBalance > 10 && this.strategy.allocations.lending > 0) {
-        const lendingAmount = usdtBalance * (this.strategy.allocations.lending / 100)
+    if (totalUSD < 1) return []
 
-        // Quote lending supply
-        const quote = await this.callTool('quote_supply', {
-          blockchain: chain,
-          protocol: 'aave',
-          token: 'USDT',
-          amount: lendingAmount.toString()
-        })
+    const currentLendingPct = (suppliedUSD / totalUSD) * 100
+    const targetLendingPct = this.strategy.allocations.lending
+    const drift = targetLendingPct - currentLendingPct
 
+    // Rebalance lending if drift exceeds threshold
+    if (Math.abs(drift) > this.strategy.rebalanceThreshold) {
+      const targetDeltaUSD = (drift / 100) * totalUSD
+
+      if (drift > 0) {
+        // Need to supply more
+        // Prioritize: WETH (no supply cap on Sepolia), then stablecoins
+        const capped = this._supplyCapped || new Set()
+        const supplyable = [
+          { token: 'WETH', bal: this.balances.WETH || 0, valuePerUnit: ethPrice, minKeep: 0.001 },
+          { token: 'USDT', bal: this.balances.USDT || 0, valuePerUnit: 1, minKeep: 10 },
+          { token: 'DAI', bal: this.balances.DAI || 0, valuePerUnit: 1, minKeep: 10 },
+          { token: 'USDC', bal: this.balances.USDC || 0, valuePerUnit: 1, minKeep: 10 }
+        ].filter(s => s.bal > s.minKeep && !capped.has(s.token))
+
+        let remainingUSD = Math.abs(targetDeltaUSD)
+        for (const s of supplyable) {
+          if (remainingUSD <= 0) break
+          const availableUSD = (s.bal - s.minKeep) * s.valuePerUnit * 0.95
+          const useUSD = Math.min(availableUSD, remainingUSD)
+          const useUnits = useUSD / s.valuePerUnit
+          if (useUnits < (s.token === 'WETH' ? 0.0001 : 1)) continue
+
+          // Round appropriately
+          const amount = s.token === 'WETH'
+            ? Math.floor(useUnits * 1e6) / 1e6
+            : Math.floor(useUnits * 100) / 100
+
+          actions.push({
+            type: 'lending_supply',
+            token: s.token,
+            amount,
+            reason: `Lending at ${currentLendingPct.toFixed(1)}%, target ${targetLendingPct}% — supply ${amount} ${s.token} (~$${useUSD.toFixed(0)})`,
+            priority: 'medium'
+          })
+          remainingUSD -= useUSD
+        }
+      } else {
+        // Need to withdraw — from supplied positions
+        const withdrawable = Object.entries(this.supplied)
+          .filter(([, v]) => v > 0.0001)
+          .map(([token, bal]) => ({
+            token, bal,
+            valuePerUnit: token === 'WETH' ? ethPrice : 1
+          }))
+          .sort((a, b) => (b.bal * b.valuePerUnit) - (a.bal * a.valuePerUnit))
+
+        let remainingUSD = Math.abs(targetDeltaUSD)
+        for (const s of withdrawable) {
+          if (remainingUSD <= 0) break
+          const useUSD = Math.min(s.bal * s.valuePerUnit, remainingUSD)
+          const useUnits = useUSD / s.valuePerUnit
+          const amount = s.token === 'WETH'
+            ? Math.floor(useUnits * 1e6) / 1e6
+            : Math.floor(useUnits * 100) / 100
+
+          actions.push({
+            type: 'lending_withdraw',
+            token: s.token,
+            amount,
+            reason: `Lending at ${currentLendingPct.toFixed(1)}%, target ${targetLendingPct}% — withdraw ${amount} ${s.token}`,
+            priority: 'medium'
+          })
+          remainingUSD -= useUSD
+        }
+      }
+    }
+
+    // Health factor monitoring (if we have borrows)
+    if (this.aaveAccount && this.aaveAccount.totalDebtUSD > 0) {
+      if (this.aaveAccount.healthFactor < 1.5) {
         actions.push({
-          type: 'lending_supply',
-          chain,
-          protocol: 'aave',
-          token: 'USDT',
-          amount: lendingAmount,
-          quote,
-          reason: `Deploy ${lendingAmount} USDT to Aave (${this.strategy.allocations.lending}% allocation)`
+          type: 'alert',
+          level: 'critical',
+          reason: `Health factor LOW: ${this.aaveAccount.healthFactor.toFixed(2)} — repay debt or add collateral`,
+          priority: 'critical'
         })
       }
+    }
 
-      // Check swap opportunities (price-based rebalancing)
-      const price = await this.callTool('get_current_price', {
-        symbol: 'ETHUSD'
+    // Gas check
+    if (this.balances.ETH < 0.002) {
+      actions.push({
+        type: 'alert',
+        level: 'warning',
+        reason: `Low ETH for gas: ${this.balances.ETH.toFixed(6)} ETH`,
+        priority: 'high'
       })
-
-      if (price) {
-        actions.push({
-          type: 'price_check',
-          chain,
-          asset: 'ETH',
-          price,
-          reason: 'Monitor ETH price for swap triggers'
-        })
-      }
     }
 
     return actions
   }
 
+  /** Pick stablecoin with highest wallet balance */
+  _pickBestStable () {
+    let best = null
+    let max = 0
+    for (const sym of ['USDT', 'DAI', 'USDC']) {
+      if ((this.balances[sym] || 0) > max) {
+        max = this.balances[sym]
+        best = sym
+      }
+    }
+    return best
+  }
+
+  /** Pick supplied token with highest balance */
+  _pickBestSupplied () {
+    let best = null
+    let max = 0
+    for (const [sym, amt] of Object.entries(this.supplied)) {
+      if (amt > max) { max = amt; best = sym }
+    }
+    return best
+  }
+
   /**
-   * Execute a proposed action
-   * @param {object} action - Action from evaluate()
-   * @returns {object} execution result
+   * Execute an action on-chain
+   * @param {object} action
+   * @returns {object} result
    */
   async execute (action) {
-    this.log('execute_start', `Executing ${action.type}`, action)
+    this.log('execute', `Executing ${action.type}: ${action.reason}`, action)
 
-    let result
-    switch (action.type) {
-      case 'lending_supply':
-        result = await this.callTool('supply', {
-          blockchain: action.chain,
-          protocol: action.protocol,
-          token: action.token,
-          amount: action.amount.toString()
-        })
-        break
+    try {
+      let result
+      switch (action.type) {
+        case 'lending_supply':
+          // If supplying WETH but balance is low, wrap ETH first
+          if (action.token === 'WETH') {
+            const wethBal = this.balances.WETH || 0
+            if (wethBal < action.amount) {
+              const toWrap = action.amount - wethBal + 0.0001
+              const ethAvail = this.balances.ETH - 0.002
+              if (ethAvail >= toWrap) {
+                this.log('wrap', `Wrapping ${toWrap.toFixed(6)} ETH → WETH`)
+                await this.wallet.wrapEth(toWrap)
+              }
+            }
+          }
+          try {
+            result = await this.aave.supply(action.token, action.amount)
+          } catch (supplyErr) {
+            // Aave error "51" = SUPPLY_CAP_EXCEEDED — add to blocked list
+            if (supplyErr.message?.includes('"51"')) {
+              this._supplyCapped = this._supplyCapped || new Set()
+              this._supplyCapped.add(action.token)
+              this.log('cap', `Supply cap exceeded for ${action.token} — skipping future supplies`)
+              result = { skipped: true, reason: `Supply cap exceeded for ${action.token}` }
+            } else {
+              throw supplyErr
+            }
+          }
+          break
 
-      case 'lending_withdraw':
-        result = await this.callTool('withdraw', {
-          blockchain: action.chain,
-          protocol: action.protocol,
-          token: action.token,
-          amount: action.amount.toString()
-        })
-        break
+        case 'lending_withdraw':
+          result = await this.aave.withdraw(action.token, action.amount)
+          break
 
-      case 'swap':
-        result = await this.callTool('swap', {
-          blockchain: action.chain,
-          protocol: action.protocol,
-          fromToken: action.fromToken,
-          toToken: action.toToken,
-          amount: action.amount.toString()
-        })
-        break
+        case 'alert':
+          result = { acknowledged: true }
+          break
 
-      case 'bridge':
-        result = await this.callTool('bridge', {
-          blockchain: action.chain,
-          protocol: action.protocol,
-          token: action.token,
-          amount: action.amount.toString(),
-          targetChain: action.targetChain
-        })
-        break
+        default:
+          result = { skipped: true, reason: `Unhandled action type: ${action.type}` }
+      }
 
-      default:
-        result = { skipped: true, reason: `Unknown action type: ${action.type}` }
+      this.log('execute_done', `Completed ${action.type}`, {
+        tx: result.tx,
+        gasUsed: result.gasUsed
+      })
+      return result
+    } catch (e) {
+      this.logError('execute', e, action)
+      return { error: e.message }
     }
-
-    this.log('execute_done', `Completed ${action.type}`, { action, result })
-    return result
   }
 
   /**
-   * Get current treasury snapshot
+   * Run a single agent cycle: refresh → evaluate → execute
    */
+  async cycle () {
+    this._cycleCount++
+    const cycleId = this._cycleCount
+
+    try {
+      await this.refresh()
+
+      const actions = await this.evaluate()
+
+      if (actions.length > 0) {
+        this.log('cycle', `Cycle #${cycleId}: ${actions.length} action(s) proposed`, {
+          actions: actions.map(a => ({ type: a.type, reason: a.reason }))
+        })
+
+        for (const action of actions) {
+          if (action.type === 'alert') {
+            this.log('alert', action.reason, { level: action.level })
+            continue
+          }
+          if (!this.paused) {
+            await this.execute(action)
+          } else {
+            this.log('skip', `Paused — skipping ${action.type}`, action)
+          }
+        }
+      } else {
+        this.log('cycle', `Cycle #${cycleId}: no actions needed`, {
+          balances: this.balances,
+          supplied: this.supplied,
+          lendingPct: this._currentLendingPct()
+        })
+      }
+    } catch (e) {
+      this.logError('cycle', e)
+    }
+  }
+
+  _currentLendingPct () {
+    const ethPrice = this.prices?.ETH?.usd || 2600
+    const suppliedUSD = (this.supplied.USDT || 0) + (this.supplied.DAI || 0) +
+      (this.supplied.USDC || 0) + (this.supplied.WETH || 0) * ethPrice
+    const walletUSD = (this.balances.USDT || 0) + (this.balances.DAI || 0) +
+      (this.balances.USDC || 0) + (this.balances.WETH || 0) * ethPrice +
+      (this.balances.ETH || 0) * ethPrice
+    const total = walletUSD + suppliedUSD
+    return total > 0 ? ((suppliedUSD / total) * 100).toFixed(1) : '0.0'
+  }
+
+  /** Start the autonomous loop */
+  start (intervalMs) {
+    if (intervalMs) this.pollIntervalMs = intervalMs
+    this.active = true
+    this.paused = false
+    this.log('start', `Agent loop started (interval: ${this.pollIntervalMs / 1000}s)`)
+    this._scheduleNext()
+  }
+
+  /** Stop the autonomous loop */
+  stop () {
+    this.active = false
+    if (this._timer) {
+      clearTimeout(this._timer)
+      this._timer = null
+    }
+    this.log('stop', 'Agent loop stopped')
+  }
+
+  /** Pause execution (still evaluates but doesn't execute) */
+  pause () {
+    this.paused = true
+    this.log('pause', 'Agent paused — will evaluate but not execute')
+  }
+
+  /** Resume execution */
+  resume () {
+    this.paused = false
+    this.log('resume', 'Agent resumed')
+  }
+
+  _scheduleNext () {
+    if (!this.active) return
+    this._timer = setTimeout(async () => {
+      await this.cycle()
+      this._scheduleNext()
+    }, this.pollIntervalMs)
+  }
+
+  /** Get full snapshot for API/dashboard */
   getSnapshot () {
-    const walletData = {}
-    for (const [chain, wallet] of this.wallets) {
-      walletData[chain] = { ...wallet }
-    }
     return {
-      wallets: walletData,
-      strategy: this.strategy,
+      address: this.wallet?.address,
       active: this.active,
-      recentActions: this.actionLog.slice(-20)
+      paused: this.paused,
+      cycle: this._cycleCount,
+      strategy: this.strategy,
+      balances: this.balances,
+      supplied: this.supplied,
+      aaveAccount: this.aaveAccount,
+      portfolio: this.portfolio,
+      prices: this.prices,
+      lendingPct: this._currentLendingPct(),
+      recentActions: this.actionLog.slice(-50),
+      recentErrors: this.errors.slice(-10)
     }
   }
 
-  /**
-   * Log an action
-   */
+  /** Log an event */
   log (type, message, data = {}) {
-    const entry = {
-      timestamp: new Date().toISOString(),
-      type,
-      message,
-      data
-    }
+    const entry = { ts: new Date().toISOString(), type, message, data }
     this.actionLog.push(entry)
-    // Keep last 1000 entries
-    if (this.actionLog.length > 1000) {
-      this.actionLog = this.actionLog.slice(-500)
+    if (this.actionLog.length > 2000) {
+      this.actionLog = this.actionLog.slice(-1000)
     }
+    console.log(`[tsentry] [${type}] ${message}`)
+  }
+
+  logError (context, error, extra = {}) {
+    const entry = {
+      ts: new Date().toISOString(),
+      context,
+      message: error.message,
+      stack: error.stack?.split('\n').slice(0, 3).join('\n'),
+      extra
+    }
+    this.errors.push(entry)
+    if (this.errors.length > 100) {
+      this.errors = this.errors.slice(-50)
+    }
+    console.error(`[tsentry] [ERROR:${context}] ${error.message}`)
   }
 }

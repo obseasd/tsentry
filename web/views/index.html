@@ -5,108 +5,373 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Tsentry — Autonomous Treasury Agent</title>
   <style>
+    :root { --bg: #0a0a0f; --card: #12121f; --border: #1a1a2e; --green: #50fa7b; --red: #ff5555; --yellow: #f1fa8c; --blue: #8be9fd; --purple: #bd93f9; --text: #e0e0e0; --muted: #666; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0a0f; color: #e0e0e0; min-height: 100vh; }
-    .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+    body { font-family: 'SF Mono', 'Fira Code', monospace; background: var(--bg); color: var(--text); min-height: 100vh; }
+    .container { max-width: 1400px; margin: 0 auto; padding: 1.5rem; }
 
-    header { display: flex; align-items: center; gap: 1rem; margin-bottom: 2rem; border-bottom: 1px solid #1a1a2e; padding-bottom: 1rem; }
-    header h1 { font-size: 1.5rem; color: #50fa7b; }
-    header .status { font-size: 0.85rem; padding: 0.25rem 0.75rem; border-radius: 12px; background: #1a1a2e; }
-    header .status.online { color: #50fa7b; border: 1px solid #50fa7b33; }
+    /* Header */
+    header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border); padding-bottom: 1rem; flex-wrap: wrap; gap: 0.75rem; }
+    header .left { display: flex; align-items: center; gap: 1rem; }
+    header h1 { font-size: 1.4rem; color: var(--green); font-weight: 700; }
+    .badge { font-size: 0.75rem; padding: 0.2rem 0.6rem; border-radius: 10px; font-weight: 600; }
+    .badge.active { background: #50fa7b22; color: var(--green); border: 1px solid #50fa7b44; }
+    .badge.idle { background: #f1fa8c22; color: var(--yellow); border: 1px solid #f1fa8c44; }
+    .badge.paused { background: #ff555522; color: var(--red); border: 1px solid #ff555544; }
+    .controls { display: flex; gap: 0.5rem; }
+    .controls button { padding: 0.4rem 0.8rem; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); cursor: pointer; font-size: 0.75rem; font-family: inherit; transition: all 0.15s; }
+    .controls button:hover { border-color: var(--blue); color: var(--blue); }
+    .controls button.primary { border-color: var(--green); color: var(--green); }
+    .controls button.danger { border-color: var(--red); color: var(--red); }
 
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
-    .card { background: #12121f; border: 1px solid #1a1a2e; border-radius: 12px; padding: 1.5rem; }
-    .card h3 { font-size: 0.85rem; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem; }
-    .card .value { font-size: 2rem; font-weight: 700; color: #fff; }
-    .card .sub { font-size: 0.85rem; color: #666; margin-top: 0.25rem; }
+    /* Grid layout */
+    .grid-top { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1rem; }
+    .grid-main { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
+    .grid-bottom { display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; }
 
-    .protocols { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem; }
-    .protocols .tag { font-size: 0.75rem; padding: 0.2rem 0.5rem; border-radius: 6px; background: #1a1a2e; color: #8be9fd; }
+    /* Cards */
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; }
+    .card h3 { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.6rem; font-weight: 500; }
+    .card .value { font-size: 1.8rem; font-weight: 700; color: #fff; }
+    .card .value.sm { font-size: 1.2rem; }
+    .card .sub { font-size: 0.75rem; color: var(--muted); margin-top: 0.2rem; }
 
-    .actions { background: #12121f; border: 1px solid #1a1a2e; border-radius: 12px; padding: 1.5rem; }
-    .actions h3 { font-size: 0.85rem; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem; }
-    .actions .empty { color: #444; font-style: italic; }
+    /* Balances table */
+    .bal-table { width: 100%; border-collapse: collapse; }
+    .bal-table th { font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; padding: 0.4rem 0; text-align: left; border-bottom: 1px solid var(--border); font-weight: 500; }
+    .bal-table td { padding: 0.5rem 0; border-bottom: 1px solid #ffffff08; font-size: 0.85rem; }
+    .bal-table td:last-child { text-align: right; }
+    .bal-table th:last-child { text-align: right; }
+    .tag { display: inline-block; font-size: 0.65rem; padding: 0.15rem 0.4rem; border-radius: 4px; font-weight: 600; }
+    .tag.wallet { background: #8be9fd15; color: var(--blue); }
+    .tag.supplied { background: #bd93f915; color: var(--purple); }
 
-    .chains { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
-    .chains .chain { font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 8px; background: #50fa7b15; color: #50fa7b; border: 1px solid #50fa7b33; }
+    /* Aave positions */
+    .position { display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid #ffffff08; }
+    .position:last-child { border-bottom: none; }
+    .position .sym { font-weight: 600; }
+    .position .amt { color: var(--green); }
+
+    /* Allocation bar */
+    .alloc-bar { height: 8px; border-radius: 4px; background: var(--border); overflow: hidden; margin: 0.75rem 0; display: flex; }
+    .alloc-bar .segment { height: 100%; transition: width 0.3s; }
+    .alloc-bar .lending { background: var(--purple); }
+    .alloc-bar .reserve { background: var(--blue); }
+    .alloc-legend { display: flex; gap: 1rem; font-size: 0.7rem; color: var(--muted); }
+    .alloc-legend span::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
+    .alloc-legend .l::before { background: var(--purple); }
+    .alloc-legend .r::before { background: var(--blue); }
+
+    /* Action log */
+    .log-entry { font-size: 0.75rem; padding: 0.4rem 0; border-bottom: 1px solid #ffffff06; display: grid; grid-template-columns: 130px 70px 1fr; gap: 0.5rem; }
+    .log-entry .ts { color: var(--muted); }
+    .log-entry .type { font-weight: 600; }
+    .log-entry .type.init, .log-entry .type.start { color: var(--green); }
+    .log-entry .type.strategy { color: var(--blue); }
+    .log-entry .type.execute, .log-entry .type.execute_done { color: var(--purple); }
+    .log-entry .type.alert { color: var(--yellow); }
+    .log-entry .type.error { color: var(--red); }
+    .log-scroll { max-height: 350px; overflow-y: auto; }
+
+    /* Strategy picker */
+    .strat-grid { display: flex; flex-direction: column; gap: 0.5rem; }
+    .strat-opt { padding: 0.6rem; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; transition: all 0.15s; }
+    .strat-opt:hover { border-color: var(--blue); }
+    .strat-opt.active { border-color: var(--green); background: #50fa7b08; }
+    .strat-opt .name { font-weight: 600; font-size: 0.8rem; }
+    .strat-opt .desc { font-size: 0.7rem; color: var(--muted); margin-top: 0.15rem; }
+
+    /* Quick actions */
+    .quick-form { display: flex; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap; }
+    .quick-form select, .quick-form input { padding: 0.3rem 0.5rem; border-radius: 5px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-family: inherit; font-size: 0.8rem; }
+    .quick-form input { width: 100px; }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+      .grid-top { grid-template-columns: repeat(2, 1fr); }
+      .grid-main, .grid-bottom { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 500px) {
+      .grid-top { grid-template-columns: 1fr; }
+      .log-entry { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
   <div class="container">
+    <!-- Header -->
     <header>
-      <h1>Tsentry</h1>
-      <span class="status" id="status">Loading...</span>
+      <div class="left">
+        <h1>Tsentry</h1>
+        <span class="badge idle" id="statusBadge">loading</span>
+        <span style="font-size:0.75rem;color:var(--muted)" id="walletAddr"></span>
+      </div>
+      <div class="controls">
+        <button onclick="doRefresh()">Refresh</button>
+        <button onclick="doCycle()">Run Cycle</button>
+        <button class="primary" onclick="doStart()" id="btnStart">Start Agent</button>
+        <button onclick="doPause()" id="btnPause">Pause</button>
+        <button class="danger" onclick="doStop()">Stop</button>
+      </div>
     </header>
 
-    <div class="grid">
+    <!-- Top KPIs -->
+    <div class="grid-top">
       <div class="card">
-        <h3>Treasury Value</h3>
+        <h3>Total Portfolio</h3>
         <div class="value" id="totalValue">$0.00</div>
-        <div class="sub">Across all chains</div>
+        <div class="sub" id="totalSub">—</div>
       </div>
       <div class="card">
-        <h3>Active Chains</h3>
-        <div class="chains" id="chains"></div>
+        <h3>Wallet Balance</h3>
+        <div class="value sm" id="walletValue">$0.00</div>
+        <div class="sub" id="walletSub">—</div>
       </div>
       <div class="card">
-        <h3>Protocols</h3>
-        <div class="protocols" id="protocols"></div>
+        <h3>Aave Supplied</h3>
+        <div class="value sm" id="suppliedValue">$0.00</div>
+        <div class="sub" id="suppliedSub">—</div>
       </div>
       <div class="card">
-        <h3>Uptime</h3>
-        <div class="value" id="uptime">—</div>
+        <h3>Health Factor</h3>
+        <div class="value sm" id="healthFactor">—</div>
+        <div class="sub" id="healthSub">No borrows</div>
       </div>
     </div>
 
-    <div class="actions">
-      <h3>Agent Actions</h3>
-      <div id="actionLog" class="empty">No actions yet. Agent is idle.</div>
+    <!-- Main: Balances + Allocation -->
+    <div class="grid-main">
+      <div class="card">
+        <h3>Token Balances</h3>
+        <table class="bal-table">
+          <thead><tr><th>Token</th><th>Location</th><th>Amount</th><th>Value</th></tr></thead>
+          <tbody id="balanceRows"></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <h3>Allocation</h3>
+        <div class="alloc-bar">
+          <div class="segment lending" id="allocLending" style="width:0%"></div>
+          <div class="segment reserve" id="allocReserve" style="width:0%"></div>
+        </div>
+        <div class="alloc-legend">
+          <span class="l">Lending <b id="lendPct">0</b>%</span>
+          <span class="r">Reserve <b id="resPct">0</b>%</span>
+        </div>
+        <div style="margin-top:1rem">
+          <h3>Strategy</h3>
+          <div class="strat-grid" id="stratGrid"></div>
+        </div>
+        <div style="margin-top:1rem">
+          <h3>Quick Action</h3>
+          <div class="quick-form">
+            <select id="qaAction"><option value="supply">Supply</option><option value="withdraw">Withdraw</option></select>
+            <select id="qaToken"><option>USDT</option><option>DAI</option><option>USDC</option></select>
+            <input type="number" id="qaAmount" placeholder="Amount">
+            <button onclick="doQuickAction()">Execute</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom: Log + Prices -->
+    <div class="grid-bottom">
+      <div class="card">
+        <h3>Agent Log</h3>
+        <div class="log-scroll" id="logEntries">
+          <div style="color:var(--muted);font-size:0.8rem">No actions yet.</div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Live Prices</h3>
+        <div id="priceList"></div>
+        <div style="margin-top:1rem">
+          <h3>Agent Info</h3>
+          <div style="font-size:0.75rem;color:var(--muted)">
+            <div>Cycle: <span id="cycleCount">0</span></div>
+            <div>Uptime: <span id="uptime">—</span></div>
+            <div>ETH Gas: <span id="ethBal">—</span></div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
   <script>
+    const strategies = [
+      { key: 'CONSERVATIVE', name: 'Conservative', desc: '60% lending, 10% liquidity, 30% reserve' },
+      { key: 'BALANCED', name: 'Balanced', desc: '40% lending, 30% liquidity, 30% reserve' },
+      { key: 'AGGRESSIVE', name: 'Aggressive', desc: '50% lending, 40% liquidity, 10% reserve' }
+    ];
+    let currentStrategy = 'BALANCED';
+
+    // Build strategy grid
+    const stratGrid = document.getElementById('stratGrid');
+    strategies.forEach(s => {
+      const div = document.createElement('div');
+      div.className = `strat-opt ${s.key === currentStrategy ? 'active' : ''}`;
+      div.innerHTML = `<div class="name">${s.name}</div><div class="desc">${s.desc}</div>`;
+      div.onclick = () => setStrategy(s.key);
+      div.id = `strat-${s.key}`;
+      stratGrid.appendChild(div);
+    });
+
+    async function api(method, path, body) {
+      const opts = { method, headers: { 'Content-Type': 'application/json' } };
+      if (body) opts.body = JSON.stringify(body);
+      const r = await fetch(path, opts);
+      return r.json();
+    }
+
     async function refresh() {
       try {
-        const [statusRes, treasuryRes] = await Promise.all([
-          fetch('/api/status'),
-          fetch('/api/treasury')
+        const [status, portfolio, actions] = await Promise.all([
+          api('GET', '/api/status'),
+          api('GET', '/api/portfolio'),
+          api('GET', '/api/actions?limit=80')
         ]);
-        const status = await statusRes.json();
-        const treasury = await treasuryRes.json();
 
         // Status badge
-        const el = document.getElementById('status');
-        el.textContent = status.status;
-        el.className = 'status online';
+        const badge = document.getElementById('statusBadge');
+        if (status.active && !status.paused) { badge.textContent = 'running'; badge.className = 'badge active'; }
+        else if (status.paused) { badge.textContent = 'paused'; badge.className = 'badge paused'; }
+        else { badge.textContent = 'idle'; badge.className = 'badge idle'; }
 
-        // Chains
-        const chainsEl = document.getElementById('chains');
-        chainsEl.innerHTML = status.chains.map(c =>
-          `<span class="chain">${c}</span>`
-        ).join('');
-
-        // Protocols
-        const protEl = document.getElementById('protocols');
-        const tags = [];
-        for (const [type, protos] of Object.entries(status.protocols)) {
-          for (const p of protos) tags.push(`${type}:${p}`);
+        // Wallet address
+        if (status.address) {
+          document.getElementById('walletAddr').textContent =
+            status.address.slice(0, 6) + '...' + status.address.slice(-4);
         }
-        protEl.innerHTML = tags.map(t => `<span class="tag">${t}</span>`).join('');
 
-        // Uptime
-        const mins = Math.floor(status.uptime / 60);
-        document.getElementById('uptime').textContent = `${mins}m`;
+        // KPIs
+        const totalUSD = portfolio.portfolio?.totalUSD || 0;
+        document.getElementById('totalValue').textContent = `$${totalUSD.toFixed(2)}`;
 
-        // Treasury
-        document.getElementById('totalValue').textContent =
-          `$${treasury.total_value_usd.toFixed(2)}`;
+        const walletStable = (portfolio.balances?.USDT || 0) + (portfolio.balances?.DAI || 0) + (portfolio.balances?.USDC || 0);
+        document.getElementById('walletValue').textContent = `$${walletStable.toFixed(2)}`;
+        document.getElementById('walletSub').textContent = `+ ${(portfolio.balances?.ETH || 0).toFixed(4)} ETH`;
+
+        const suppliedTotal = Object.values(portfolio.supplied || {}).reduce((s, v) => s + v, 0);
+        document.getElementById('suppliedValue').textContent = `$${suppliedTotal.toFixed(2)}`;
+        document.getElementById('suppliedSub').textContent = Object.entries(portfolio.supplied || {})
+          .filter(([,v]) => v > 0).map(([k,v]) => `${v.toFixed(1)} ${k}`).join(', ') || 'Nothing supplied';
+
+        // Health factor
+        const hf = portfolio.aaveAccount?.healthFactor;
+        const hfEl = document.getElementById('healthFactor');
+        if (hf && hf < 1e10) {
+          hfEl.textContent = hf.toFixed(2);
+          hfEl.style.color = hf < 1.5 ? 'var(--red)' : hf < 3 ? 'var(--yellow)' : 'var(--green)';
+          document.getElementById('healthSub').textContent = `LTV: ${(portfolio.aaveAccount.ltv || 0).toFixed(0)}%`;
+        } else {
+          hfEl.textContent = '∞';
+          hfEl.style.color = 'var(--green)';
+          document.getElementById('healthSub').textContent = portfolio.aaveAccount?.totalCollateralUSD > 0 ? 'No borrows' : 'No positions';
+        }
+
+        // Token balances table
+        const rows = [];
+        for (const [sym, amt] of Object.entries(portfolio.balances || {})) {
+          if (amt > 0.0001) {
+            const price = portfolio.prices?.[sym]?.usd || (['USDT','DAI','USDC'].includes(sym) ? 1 : 0);
+            rows.push({ sym, amt, loc: 'wallet', val: amt * price });
+          }
+        }
+        for (const [sym, amt] of Object.entries(portfolio.supplied || {})) {
+          if (amt > 0.0001) {
+            rows.push({ sym: `a${sym}`, amt, loc: 'supplied', val: amt });
+          }
+        }
+        rows.sort((a, b) => b.val - a.val);
+        document.getElementById('balanceRows').innerHTML = rows.map(r => `
+          <tr>
+            <td><b>${r.sym}</b></td>
+            <td><span class="tag ${r.loc}">${r.loc}</span></td>
+            <td>${r.amt < 0.01 ? r.amt.toFixed(6) : r.amt.toFixed(2)}</td>
+            <td>$${r.val.toFixed(2)}</td>
+          </tr>
+        `).join('');
+
+        // Allocation bar
+        const totalAll = walletStable + suppliedTotal;
+        const lPct = totalAll > 0 ? (suppliedTotal / totalAll * 100) : 0;
+        const rPct = 100 - lPct;
+        document.getElementById('allocLending').style.width = lPct + '%';
+        document.getElementById('allocReserve').style.width = rPct + '%';
+        document.getElementById('lendPct').textContent = lPct.toFixed(1);
+        document.getElementById('resPct').textContent = rPct.toFixed(1);
+
+        // Strategy
+        currentStrategy = (status.strategy || 'balanced').toUpperCase();
+        document.querySelectorAll('.strat-opt').forEach(el => {
+          el.classList.toggle('active', el.id === `strat-${currentStrategy}`);
+        });
+
+        // Prices
+        const priceHtml = Object.entries(portfolio.prices || {})
+          .filter(([k]) => !k.startsWith('_'))
+          .map(([sym, p]) => {
+            const ch = p.change24h || 0;
+            const color = ch >= 0 ? 'var(--green)' : 'var(--red)';
+            return `<div style="display:flex;justify-content:space-between;padding:0.3rem 0;font-size:0.8rem;border-bottom:1px solid #ffffff06">
+              <span>${sym}</span>
+              <span>$${p.usd?.toLocaleString() || '?'}</span>
+              <span style="color:${color}">${ch >= 0 ? '+' : ''}${ch.toFixed(1)}%</span>
+            </div>`;
+          }).join('');
+        document.getElementById('priceList').innerHTML = priceHtml || '<span style="color:var(--muted);font-size:0.8rem">Loading...</span>';
+
+        // Info
+        document.getElementById('cycleCount').textContent = status.cycle || 0;
+        document.getElementById('uptime').textContent = formatUptime(status.uptime);
+        document.getElementById('ethBal').textContent = `${(portfolio.balances?.ETH || 0).toFixed(6)} ETH`;
+
+        // Action log
+        if (actions.actions?.length > 0) {
+          document.getElementById('logEntries').innerHTML = actions.actions.slice().reverse().map(a => `
+            <div class="log-entry">
+              <span class="ts">${new Date(a.ts).toLocaleTimeString()}</span>
+              <span class="type ${a.type}">${a.type}</span>
+              <span>${a.message}</span>
+            </div>
+          `).join('');
+        }
       } catch (e) {
-        document.getElementById('status').textContent = 'offline';
+        console.error('Refresh error:', e);
       }
     }
 
+    function formatUptime(s) {
+      if (!s) return '—';
+      const h = Math.floor(s / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      return h > 0 ? `${h}h ${m}m` : `${m}m`;
+    }
+
+    async function setStrategy(key) {
+      await api('POST', '/api/strategy', { name: key });
+      await refresh();
+    }
+
+    async function doRefresh() { await api('POST', '/api/refresh'); await refresh(); }
+    async function doCycle() { await api('POST', '/api/cycle'); await refresh(); }
+    async function doStart() { await api('POST', '/api/start', { intervalMs: 60000 }); await refresh(); }
+    async function doStop() { await api('POST', '/api/stop'); await refresh(); }
+    async function doPause() { await api('POST', '/api/pause'); await refresh(); }
+
+    async function doQuickAction() {
+      const action = document.getElementById('qaAction').value;
+      const token = document.getElementById('qaToken').value;
+      const amount = document.getElementById('qaAmount').value;
+      if (!amount) return alert('Enter an amount');
+      await api('POST', `/api/${action}`, { token, amount: parseFloat(amount) });
+      document.getElementById('qaAmount').value = '';
+      await refresh();
+    }
+
+    // Init
     refresh();
-    setInterval(refresh, 10000);
+    setInterval(refresh, 8000);
   </script>
 </body>
 </html>
