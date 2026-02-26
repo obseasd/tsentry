@@ -3,6 +3,7 @@
 
 import { createWalletFromEnv } from '../evm/wallet.js'
 import { AaveLending } from '../evm/aave.js'
+import { UniswapSwap } from '../evm/swap.js'
 import { calculatePortfolioValue, getPrices } from '../evm/pricing.js'
 import { STRATEGIES } from './strategies.js'
 
@@ -14,6 +15,7 @@ export class TreasuryAgent {
   constructor () {
     this.wallet = null
     this.aave = null
+    this.swap = null
     this.strategy = null
     this.active = false
     this.paused = false
@@ -24,6 +26,7 @@ export class TreasuryAgent {
     this.aaveAccount = null
     this.portfolio = null
     this.prices = {}
+    this.swapPairs = []
 
     // Logging
     this.actionLog = []
@@ -45,10 +48,21 @@ export class TreasuryAgent {
       tokens: this.wallet.tokens
     })
 
+    this.swap = new UniswapSwap({
+      signer: this.wallet.signer,
+      tokens: this.wallet.tokens
+    })
+
+    // Discover available swap pairs
+    try {
+      this.swapPairs = await this.swap.getAvailablePairs()
+    } catch { this.swapPairs = [] }
+
     await this.refresh()
     this.log('init', `Agent initialized — wallet ${this.wallet.address}`, {
       balances: this.balances,
-      supplied: this.supplied
+      supplied: this.supplied,
+      swapPairs: this.swapPairs.map(p => `${p.tokenA}/${p.tokenB}`)
     })
 
     return this
@@ -193,6 +207,35 @@ export class TreasuryAgent {
       }
     }
 
+    // Stablecoin concentration — rebalance across stables via swap
+    const stableBals = { USDT: this.balances.USDT || 0, DAI: this.balances.DAI || 0, USDC: this.balances.USDC || 0 }
+    const totalStable = stableBals.USDT + stableBals.DAI + stableBals.USDC
+    if (totalStable > 100) {
+      const idealPer = totalStable / 3
+      for (const [sym, bal] of Object.entries(stableBals)) {
+        const excess = bal - idealPer
+        // If one stablecoin is >60% of total stables, swap some to the lowest
+        if (excess > totalStable * 0.25) {
+          const lowestSym = Object.entries(stableBals)
+            .filter(([s]) => s !== sym)
+            .sort((a, b) => a[1] - b[1])[0]?.[0]
+          if (lowestSym && this._hasPair(sym, lowestSym)) {
+            const swapAmt = Math.floor(excess * 0.4 * 100) / 100 // swap 40% of excess
+            if (swapAmt > 10) {
+              actions.push({
+                type: 'swap',
+                tokenIn: sym,
+                tokenOut: lowestSym,
+                amount: swapAmt,
+                reason: `${sym} overweight (${((bal / totalStable) * 100).toFixed(0)}%) — rebalance to ${lowestSym}`,
+                priority: 'low'
+              })
+            }
+          }
+        }
+      }
+    }
+
     // Gas check
     if (this.balances.ETH < 0.002) {
       actions.push({
@@ -204,6 +247,14 @@ export class TreasuryAgent {
     }
 
     return actions
+  }
+
+  /** Check if a swap pair exists */
+  _hasPair (tokenA, tokenB) {
+    return this.swapPairs.some(p =>
+      (p.tokenA === tokenA && p.tokenB === tokenB) ||
+      (p.tokenA === tokenB && p.tokenB === tokenA)
+    )
   }
 
   /** Pick stablecoin with highest wallet balance */
@@ -270,6 +321,12 @@ export class TreasuryAgent {
 
         case 'lending_withdraw':
           result = await this.aave.withdraw(action.token, action.amount)
+          break
+
+        case 'swap':
+          result = await this.swap.sell(
+            action.tokenIn, action.tokenOut, action.amount, 2
+          )
           break
 
         case 'alert':
@@ -395,6 +452,7 @@ export class TreasuryAgent {
       portfolio: this.portfolio,
       prices: this.prices,
       lendingPct: this._currentLendingPct(),
+      swapPairs: this.swapPairs,
       recentActions: this.actionLog.slice(-50),
       recentErrors: this.errors.slice(-10)
     }

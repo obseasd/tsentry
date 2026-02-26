@@ -174,6 +174,34 @@
       </div>
     </div>
 
+    <!-- Middle: Swap -->
+    <div class="grid-main">
+      <div class="card">
+        <h3>Swap</h3>
+        <div class="quick-form" style="flex-direction:column;gap:0.75rem">
+          <div style="display:flex;gap:0.5rem;align-items:center">
+            <select id="swapIn"><option>USDT</option><option>DAI</option><option>USDC</option><option>WETH</option></select>
+            <span style="color:var(--muted)">→</span>
+            <select id="swapOut"><option>USDC</option><option>USDT</option><option>DAI</option><option>WETH</option></select>
+            <input type="number" id="swapAmt" placeholder="Amount" style="width:120px">
+            <button onclick="doQuote()">Quote</button>
+            <button class="primary" onclick="doSwap()" style="border-color:var(--purple);color:var(--purple)">Swap</button>
+          </div>
+          <div id="swapQuote" style="font-size:0.8rem;color:var(--muted)">Enter amount and click Quote</div>
+        </div>
+        <div style="margin-top:0.75rem">
+          <h3>Available Pairs</h3>
+          <div id="swapPairs" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-top:0.3rem"></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Recent Swaps</h3>
+        <div id="swapHistory" class="log-scroll" style="max-height:180px">
+          <div style="color:var(--muted);font-size:0.8rem">No swaps yet.</div>
+        </div>
+      </div>
+    </div>
+
     <!-- Bottom: Log + Prices -->
     <div class="grid-bottom">
       <div class="card">
@@ -225,10 +253,11 @@
 
     async function refresh() {
       try {
-        const [status, portfolio, actions] = await Promise.all([
+        const [status, portfolio, actions, swapData] = await Promise.all([
           api('GET', '/api/status'),
           api('GET', '/api/portfolio'),
-          api('GET', '/api/actions?limit=80')
+          api('GET', '/api/actions?limit=80'),
+          api('GET', '/api/swap/pairs')
         ]);
 
         // Status badge
@@ -336,6 +365,30 @@
             </div>
           `).join('');
         }
+
+        // Swap pairs
+        const pairsEl = document.getElementById('swapPairs');
+        if (swapData.pairs?.length > 0) {
+          pairsEl.innerHTML = swapData.pairs.map(p =>
+            `<span class="tag wallet" style="margin:0.15rem 0">${p.tokenA}/${p.tokenB} <span style="color:var(--muted);font-size:0.6rem">${p.fee / 10000}%</span></span>`
+          ).join('');
+        } else {
+          pairsEl.innerHTML = '<span style="color:var(--muted);font-size:0.8rem">No pairs found</span>';
+        }
+
+        // Swap history (from action log)
+        const swapActions = (actions.actions || []).filter(a =>
+          a.type === 'manual_swap' || (a.type === 'execute_done' && a.message?.includes('swap'))
+        ).slice(-10).reverse();
+        const historyEl = document.getElementById('swapHistory');
+        if (swapActions.length > 0) {
+          historyEl.innerHTML = swapActions.map(a => `
+            <div style="font-size:0.75rem;padding:0.4rem 0;border-bottom:1px solid #ffffff06;display:flex;justify-content:space-between">
+              <span style="color:var(--muted)">${new Date(a.ts).toLocaleTimeString()}</span>
+              <span style="color:var(--purple)">${a.message}</span>
+            </div>
+          `).join('');
+        }
       } catch (e) {
         console.error('Refresh error:', e);
       }
@@ -367,6 +420,45 @@
       await api('POST', `/api/${action}`, { token, amount: parseFloat(amount) });
       document.getElementById('qaAmount').value = '';
       await refresh();
+    }
+
+    // Swap functions
+    async function doQuote() {
+      const tokenIn = document.getElementById('swapIn').value;
+      const tokenOut = document.getElementById('swapOut').value;
+      const amount = parseFloat(document.getElementById('swapAmt').value);
+      const quoteEl = document.getElementById('swapQuote');
+      if (!amount || amount <= 0) { quoteEl.textContent = 'Enter a valid amount'; return; }
+      if (tokenIn === tokenOut) { quoteEl.textContent = 'Select different tokens'; return; }
+      quoteEl.textContent = 'Quoting...';
+      try {
+        const res = await api('POST', '/api/swap/quote', { tokenIn, tokenOut, amount });
+        if (res.error) { quoteEl.innerHTML = `<span style="color:var(--red)">${res.error}</span>`; return; }
+        quoteEl.innerHTML = `<span style="color:var(--green)">${amount} ${tokenIn} → ${res.amountOut?.toFixed(6) || res.expectedOutput?.toFixed(6) || '?'} ${tokenOut}</span>`
+          + `<br><span style="color:var(--muted);font-size:0.7rem">Pool fee: ${(res.fee / 10000).toFixed(2)}% | Price impact: ~${(res.priceImpact || 0).toFixed(2)}%</span>`;
+      } catch (e) {
+        quoteEl.innerHTML = `<span style="color:var(--red)">Quote failed: ${e.message}</span>`;
+      }
+    }
+
+    async function doSwap() {
+      const tokenIn = document.getElementById('swapIn').value;
+      const tokenOut = document.getElementById('swapOut').value;
+      const amount = parseFloat(document.getElementById('swapAmt').value);
+      const quoteEl = document.getElementById('swapQuote');
+      if (!amount || amount <= 0) { quoteEl.textContent = 'Enter a valid amount'; return; }
+      if (tokenIn === tokenOut) { quoteEl.textContent = 'Select different tokens'; return; }
+      quoteEl.innerHTML = '<span style="color:var(--yellow)">Executing swap...</span>';
+      try {
+        const res = await api('POST', '/api/swap/execute', { tokenIn, tokenOut, amount, slippage: 2 });
+        if (res.error) { quoteEl.innerHTML = `<span style="color:var(--red)">${res.error}</span>`; return; }
+        quoteEl.innerHTML = `<span style="color:var(--green)">Swapped ${res.amountIn} ${tokenIn} → ${res.amountOut} ${tokenOut}</span>`
+          + `<br><span style="color:var(--muted);font-size:0.7rem">TX: ${res.tx?.slice(0,10)}... | Gas: ${res.gasUsed}</span>`;
+        document.getElementById('swapAmt').value = '';
+        await refresh();
+      } catch (e) {
+        quoteEl.innerHTML = `<span style="color:var(--red)">Swap failed: ${e.message}</span>`;
+      }
     }
 
     // Init

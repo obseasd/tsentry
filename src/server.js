@@ -148,6 +148,40 @@ app.post('/api/withdraw', async (req, res) => {
   }
 })
 
+// ─── API: Swap ───
+
+app.get('/api/swap/pairs', (req, res) => {
+  res.json({ pairs: agent.swapPairs })
+})
+
+app.post('/api/swap/quote', async (req, res) => {
+  try {
+    const { tokenIn, tokenOut, amount, side } = req.body
+    if (!tokenIn || !tokenOut || !amount) {
+      return res.status(400).json({ error: 'tokenIn, tokenOut, and amount required' })
+    }
+    const quote = await agent.swap.quote(tokenIn, tokenOut, parseFloat(amount), side || 'sell')
+    res.json({ ok: true, ...quote })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+app.post('/api/swap/execute', async (req, res) => {
+  try {
+    const { tokenIn, tokenOut, amount, slippage } = req.body
+    if (!tokenIn || !tokenOut || !amount) {
+      return res.status(400).json({ error: 'tokenIn, tokenOut, and amount required' })
+    }
+    const result = await agent.swap.sell(tokenIn, tokenOut, parseFloat(amount), slippage || 2)
+    agent.log('manual_swap', `Manual swap ${amount} ${tokenIn} → ${tokenOut}`, result)
+    await agent.refresh()
+    res.json({ ok: true, ...result })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
 // ─── Boot ───
 
 async function boot () {
