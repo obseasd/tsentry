@@ -6,7 +6,13 @@
       "env": {
         "WDK_SEED": "${WDK_SEED}",
         "ETH_RPC_URL": "${ETH_RPC_URL}",
-        "USDT_CONTRACT": "${USDT_CONTRACT}"
+        "ETH_PRIVATE_KEY": "${ETH_PRIVATE_KEY}",
+        "USDT_CONTRACT": "${USDT_CONTRACT}",
+        "DAI_CONTRACT": "${DAI_CONTRACT}",
+        "USDC_CONTRACT": "${USDC_CONTRACT}",
+        "WETH_CONTRACT": "${WETH_CONTRACT}",
+        "AAVE_POOL": "${AAVE_POOL}",
+        "AAVE_FAUCET": "${AAVE_FAUCET}"
       }
     }
   }
