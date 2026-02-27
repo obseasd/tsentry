@@ -108,6 +108,16 @@
     .quick-form select, .quick-form input { padding: 0.3rem 0.5rem; border-radius: 5px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-family: inherit; font-size: 0.8rem; }
     .quick-form input { width: 100px; }
 
+    /* Toast notifications */
+    .toast-container { position: fixed; top: 1rem; right: 1rem; z-index: 9999; display: flex; flex-direction: column; gap: 0.5rem; }
+    .toast { padding: 0.6rem 1rem; border-radius: 8px; font-size: 0.8rem; font-family: inherit; animation: toastIn 0.3s ease, toastOut 0.3s ease 2.7s forwards; max-width: 350px; box-shadow: 0 4px 12px #0004; }
+    .toast.success { background: #50fa7b22; border: 1px solid #50fa7b66; color: var(--green); }
+    .toast.info { background: #8be9fd22; border: 1px solid #8be9fd66; color: var(--blue); }
+    .toast.warning { background: #f1fa8c22; border: 1px solid #f1fa8c66; color: var(--yellow); }
+    .toast.error { background: #ff555522; border: 1px solid #ff555566; color: var(--red); }
+    @keyframes toastIn { from { opacity: 0; transform: translateX(100px); } to { opacity: 1; transform: translateX(0); } }
+    @keyframes toastOut { from { opacity: 1; } to { opacity: 0; transform: translateY(-10px); } }
+
     /* Responsive */
     @media (max-width: 900px) {
       .grid-top { grid-template-columns: repeat(2, 1fr); }
@@ -120,6 +130,7 @@
   </style>
 </head>
 <body>
+  <div class="toast-container" id="toasts"></div>
   <div class="container">
     <!-- Header -->
     <header>
@@ -426,8 +437,9 @@
         document.getElementById('lendPct').textContent = lPct.toFixed(1);
         document.getElementById('resPct').textContent = rPct.toFixed(1);
 
-        // Strategy
-        currentStrategy = (status.strategy || 'balanced').toUpperCase();
+        // Strategy — map display name back to key
+        const stratNameToKey = { 'USDT Yield': 'USDT_YIELD', 'Conservative': 'CONSERVATIVE', 'Balanced': 'BALANCED', 'Aggressive': 'AGGRESSIVE' };
+        currentStrategy = stratNameToKey[status.strategy] || status.strategy?.toUpperCase().replace(/\s+/g, '_') || 'USDT_YIELD';
         document.querySelectorAll('.strat-opt').forEach(el => {
           el.classList.toggle('active', el.id === `strat-${currentStrategy}`);
         });
@@ -508,23 +520,53 @@
       return h > 0 ? `${h}h ${m}m` : `${m}m`;
     }
 
+    function toast(msg, type = 'info') {
+      const el = document.createElement('div');
+      el.className = `toast ${type}`;
+      el.textContent = msg;
+      document.getElementById('toasts').appendChild(el);
+      setTimeout(() => el.remove(), 3200);
+    }
+
     async function setStrategy(key) {
-      await api('POST', '/api/strategy', { name: key });
+      const res = await api('POST', '/api/strategy', { name: key });
+      toast(`Strategy → ${res.strategy?.name || key}`, 'success');
       await refresh();
     }
 
-    async function doRefresh() { await api('POST', '/api/refresh'); await refresh(); }
-    async function doCycle() { await api('POST', '/api/cycle'); await refresh(); }
-    async function doStart() { await api('POST', '/api/start', { intervalMs: 60000 }); await refresh(); }
-    async function doStop() { await api('POST', '/api/stop'); await refresh(); }
-    async function doPause() { await api('POST', '/api/pause'); await refresh(); }
+    async function doRefresh() { await api('POST', '/api/refresh'); toast('Balances refreshed', 'info'); await refresh(); }
+    async function doCycle() {
+      toast('Running cycle...', 'info');
+      const res = await api('POST', '/api/cycle');
+      const n = res.snapshot?.recentActions?.slice(-5).filter(a => a.type === 'cycle').length || 0;
+      toast(`Cycle #${res.snapshot?.cycle} complete`, 'success');
+      await refresh();
+    }
+    async function doStart() {
+      await api('POST', '/api/start', { intervalMs: 60000 });
+      toast('Agent started (60s interval)', 'success');
+      await refresh();
+    }
+    async function doStop() {
+      await api('POST', '/api/stop');
+      toast('Agent stopped', 'warning');
+      await refresh();
+    }
+    async function doPause() {
+      const res = await api('POST', '/api/pause');
+      toast(res.paused ? 'Agent paused' : 'Agent resumed', res.paused ? 'warning' : 'success');
+      await refresh();
+    }
 
     async function doQuickAction() {
       const action = document.getElementById('qaAction').value;
       const token = document.getElementById('qaToken').value;
       const amount = document.getElementById('qaAmount').value;
-      if (!amount) return alert('Enter an amount');
-      await api('POST', `/api/${action}`, { token, amount: parseFloat(amount) });
+      if (!amount) return toast('Enter an amount', 'warning');
+      toast(`${action === 'supply' ? 'Supplying' : 'Withdrawing'} ${amount} ${token}...`, 'info');
+      const res = await api('POST', `/api/${action}`, { token, amount: parseFloat(amount) });
+      if (res.error) { toast(`Error: ${res.error}`, 'error'); return; }
+      toast(`${action === 'supply' ? 'Supplied' : 'Withdrawn'} ${amount} ${token}`, 'success');
       document.getElementById('qaAmount').value = '';
       await refresh();
     }
@@ -542,7 +584,8 @@
         const res = await api('POST', '/api/swap/quote', { tokenIn, tokenOut, amount });
         if (res.error) { quoteEl.innerHTML = `<span style="color:var(--red)">${res.error}</span>`; return; }
         quoteEl.innerHTML = `<span style="color:var(--green)">${amount} ${tokenIn} → ${res.amountOut?.toFixed(6) || res.expectedOutput?.toFixed(6) || '?'} ${tokenOut}</span>`
-          + `<br><span style="color:var(--muted);font-size:0.7rem">Pool fee: ${(res.fee / 10000).toFixed(2)}% | Price impact: ~${(res.priceImpact || 0).toFixed(2)}%</span>`;
+          + `<br><span style="color:var(--muted);font-size:0.7rem">Pool fee: ${(res.fee / 10000).toFixed(2)}% | Price impact: ~${(res.priceImpact || 0).toFixed(2)}%</span>`
+          + `<br><span style="color:var(--yellow);font-size:0.65rem">⚠ Sepolia testnet — rates may differ from mainnet</span>`;
       } catch (e) {
         quoteEl.innerHTML = `<span style="color:var(--red)">Quote failed: ${e.message}</span>`;
       }
@@ -654,6 +697,11 @@
 
       let html = '';
 
+      // Direct answer (for user questions)
+      if (d.answer) {
+        html += `<div class="llm-reasoning" style="border-left-color:var(--green);background:#50fa7b08;font-size:0.85rem">${escHtml(d.answer)}</div>`;
+      }
+
       // Reasoning text
       html += `<div class="llm-reasoning">${escHtml(d.reasoning)}</div>`;
 
@@ -714,16 +762,20 @@
       if (!instruction) return;
       const content = document.getElementById('llmContent');
       content.innerHTML = '<div style="color:#ff79c6;font-size:0.8rem">Thinking...</div>';
+      toast('Asking AI...', 'info');
       try {
         const res = await api('POST', '/api/llm/reason', { instruction });
         if (res.error) {
           content.innerHTML = `<div style="color:var(--red);font-size:0.8rem">${escHtml(res.error)}</div>`;
+          toast('AI error', 'error');
           return;
         }
         input.value = '';
+        toast('AI response received', 'success');
         await refresh();
       } catch (e) {
         content.innerHTML = `<div style="color:var(--red);font-size:0.8rem">Error: ${escHtml(e.message)}</div>`;
+        toast('AI request failed', 'error');
       }
     }
 

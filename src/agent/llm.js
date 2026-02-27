@@ -29,6 +29,7 @@ Strategy-specific behavior:
 You MUST respond with valid JSON matching this schema:
 {
   "reasoning": "1-3 sentence analysis of current state",
+  "answer": "Direct answer to user question (only if user instruction is a question, otherwise omit)",
   "market_assessment": "bullish | bearish | neutral | uncertain",
   "risk_level": "low | medium | high | critical",
   "actions": [
@@ -45,8 +46,12 @@ You MUST respond with valid JSON matching this schema:
   "next_check_suggestion": "30s | 1m | 5m | 15m | 1h"
 }
 
-If no action is needed, return empty actions array with reasoning explaining why.
-Never propose actions you're not confident about (confidence < 0.5).`
+IMPORTANT response rules:
+- If the user asks a question (price, analysis, explanation), put the DIRECT ANSWER in the "answer" field and keep actions empty.
+  Do NOT create alert actions to answer user questions — use the "answer" field instead.
+- If no action is needed, return empty actions array with reasoning explaining why.
+- Only propose executable actions (lending_supply, lending_withdraw, swap, bridge) when you genuinely recommend them.
+- Never propose actions you're not confident about (confidence < 0.5).`
 
 export class LlmReasoning {
   constructor (opts = {}) {
@@ -203,7 +208,12 @@ export class LlmReasoning {
       userMessage += '\n\nConsider these rule-based suggestions but use your own judgment. You may agree, modify, or override them.'
     }
 
-    userMessage += '\n\nAnalyze the treasury state and propose actions. Respond with JSON only.'
+    if (opts.userInstruction) {
+      userMessage += `\n\nThe user is asking: "${opts.userInstruction}". Answer their question directly in the "answer" field. Return empty actions array — do NOT create alert actions to answer questions.`
+    } else {
+      userMessage += '\n\nAnalyze the treasury state and propose actions.'
+    }
+    userMessage += ' Respond with JSON only.'
 
     // Build messages with history for continuity
     const messages = [
@@ -245,6 +255,18 @@ export class LlmReasoning {
 
     // Filter low-confidence actions
     decision.actions = decision.actions.filter(a => (a.confidence || 0) >= 0.5)
+
+    // Post-process for user questions: extract answer, strip alert-as-answer actions
+    if (opts.userInstruction) {
+      // If LLM didn't provide answer field, synthesize from reasoning
+      if (!decision.answer) {
+        decision.answer = decision.reasoning
+      }
+      // Remove alert/hold actions that are just answering the question (not real alerts)
+      decision.actions = decision.actions.filter(a =>
+        a.type !== 'alert' && a.type !== 'hold'
+      )
+    }
 
     // Add metadata
     decision._meta = {
