@@ -490,12 +490,17 @@
         ).slice(-10).reverse();
         const historyEl = document.getElementById('swapHistory');
         if (swapActions.length > 0) {
-          historyEl.innerHTML = swapActions.map(a => `
-            <div style="font-size:0.75rem;padding:0.4rem 0;border-bottom:1px solid #ffffff06;display:flex;justify-content:space-between">
-              <span style="color:var(--muted)">${new Date(a.ts).toLocaleTimeString()}</span>
-              <span style="color:var(--purple)">${a.message}</span>
-            </div>
-          `).join('');
+          historyEl.innerHTML = swapActions.map(a => {
+            const d = a.data || {};
+            const txLink = d.tx ? `<span style="color:var(--muted);font-size:0.6rem">tx:${d.tx.slice(0,8)}…</span>` : '';
+            return `<div style="font-size:0.75rem;padding:0.5rem 0;border-bottom:1px solid #ffffff06">
+              <div style="display:flex;justify-content:space-between">
+                <span style="color:var(--muted)">${new Date(a.ts).toLocaleTimeString()}</span>
+                <span style="color:var(--green)">${a.message}</span>
+              </div>
+              ${d.gasUsed ? `<div style="color:var(--muted);font-size:0.65rem;margin-top:0.15rem">Gas: ${d.gasUsed} ${txLink}</div>` : ''}
+            </div>`;
+          }).join('');
         }
 
         // Bridge chains

@@ -202,7 +202,7 @@ app.post('/api/swap/execute', async (req, res) => {
       return res.status(400).json({ error: 'tokenIn, tokenOut, and amount required' })
     }
     const result = await agent.swap.sell(tokenIn, tokenOut, parseFloat(amount), slippage || 2)
-    agent.log('manual_swap', `Manual swap ${amount} ${tokenIn} → ${tokenOut}`, result)
+    agent.log('manual_swap', `Manual swap ${amount} ${tokenIn} → ${result.amountOut} ${tokenOut}`, result)
     await agent.refresh()
     res.json({ ok: true, ...result })
   } catch (e) {
