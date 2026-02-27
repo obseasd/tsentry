@@ -26,6 +26,7 @@ import { AaveLending } from './evm/aave.js'
 import { UniswapSwap } from './evm/swap.js'
 import { Usdt0Bridge } from './evm/bridge.js'
 import { getPrices } from './evm/pricing.js'
+import { LlmReasoning } from './agent/llm.js'
 
 const RPC_URL = process.env.ETH_RPC_URL || 'https://sepolia.drpc.org'
 
@@ -505,6 +506,94 @@ Examples:
   )
 }
 
+// ─── AI Reasoning Tool ───
+
+let llm = null
+if (process.env.ANTHROPIC_API_KEY) {
+  try { llm = new LlmReasoning() } catch { llm = null }
+}
+
+function tsentryAskAi (server) {
+  server.registerTool(
+    'tsentry_ask_ai',
+    {
+      title: 'Tsentry AI Analysis',
+      description: `Ask the AI reasoning engine to analyze the current treasury state and propose actions.
+
+Provide an optional instruction to focus the analysis (e.g., "Should I increase lending?",
+"Analyze risk exposure", "What's the best strategy for USDT yield?").
+
+Returns: AI reasoning, market assessment, risk level, proposed actions with confidence scores.
+
+Examples:
+  - "Analyze my portfolio"
+  - "Should I rebalance?"
+  - "What are the risks right now?"`,
+      inputSchema: z.object({
+        instruction: z.string().optional().describe('Optional focus instruction for the AI analysis')
+      }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true }
+    },
+    async ({ instruction }) => {
+      try {
+        if (!llm) {
+          return { content: [{ type: 'text', text: 'LLM not available — set ANTHROPIC_API_KEY in .env' }] }
+        }
+
+        const balances = await wallet.getAllBalances()
+        const supplied = await aave.getAllSupplied()
+        const prices = await getPrices(['ETH', 'BTC', 'USDT', 'DAI', 'USDC'])
+        const pairs = await swap.getAvailablePairs()
+
+        const snapshot = {
+          cycle: 0,
+          strategy: { name: 'Balanced', allocations: { lending: 40, liquidity: 30, reserve: 30 }, targetYield: 6, maxRisk: 40, rebalanceThreshold: 5 },
+          active: false, paused: false,
+          balances, supplied,
+          aaveAccount: await aave.getAccountData(),
+          portfolio: { totalUSD: Object.values(balances).reduce((s, v) => s + (typeof v === 'number' ? v : 0), 0) },
+          prices,
+          lendingPct: '0',
+          swapPairs: pairs,
+          bridgeChains: bridge?.getSupportedChains() || [],
+          recentActions: [],
+          recentErrors: []
+        }
+
+        const decision = await llm.reason(snapshot, { userInstruction: instruction })
+
+        const lines = [
+          `AI Analysis (${decision._meta?.model || 'unknown'}, ${decision._meta?.latencyMs || '?'}ms)`,
+          '',
+          `Reasoning: ${decision.reasoning}`,
+          `Market: ${decision.market_assessment} | Risk: ${decision.risk_level}`,
+          ''
+        ]
+
+        if (decision.actions.length > 0) {
+          lines.push('Proposed Actions:')
+          for (const a of decision.actions) {
+            lines.push(`  [${a.type}] ${a.token || ''} ${a.amount || ''} — ${a.reason} (confidence: ${((a.confidence || 0) * 100).toFixed(0)}%)`)
+          }
+        } else {
+          lines.push('No actions proposed — current position looks good.')
+        }
+
+        if (decision.next_check_suggestion) {
+          lines.push(`\nSuggested next check: ${decision.next_check_suggestion}`)
+        }
+
+        return {
+          content: [{ type: 'text', text: lines.join('\n') }],
+          structuredContent: decision
+        }
+      } catch (e) {
+        return { isError: true, content: [{ type: 'text', text: `AI reasoning error: ${e.message}` }] }
+      }
+    }
+  )
+}
+
 // ─── Register All Tools ───
 
 const tools = [
@@ -524,7 +613,8 @@ const tools = [
   tsentryBridgeRoutes,
   tsentrySupply,
   tsentryWithdraw,
-  tsentryOverview
+  tsentryOverview,
+  tsentryAskAi
 ]
 
 server.registerTools(tools)
@@ -537,4 +627,4 @@ await server.connect(transport)
 console.error('[tsentry-mcp] Server running on stdio')
 console.error(`[tsentry-mcp] Chains: ${server.getChains().join(', ')}`)
 console.error(`[tsentry-mcp] Tokens: ${server.getRegisteredTokens('ethereum').join(', ')}`)
-console.error(`[tsentry-mcp] Custom tools: 8 Tsentry + ${WALLET_TOOLS.length + SWAP_TOOLS.length + BRIDGE_TOOLS.length + LENDING_TOOLS.length + PRICING_TOOLS.length + FIAT_TOOLS.length} WDK`)
+console.error(`[tsentry-mcp] Custom tools: 9 Tsentry + ${WALLET_TOOLS.length + SWAP_TOOLS.length + BRIDGE_TOOLS.length + LENDING_TOOLS.length + PRICING_TOOLS.length + FIAT_TOOLS.length} WDK`)

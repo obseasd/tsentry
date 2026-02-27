@@ -54,4 +54,30 @@ export const AGGRESSIVE = {
   rebalanceThreshold: 3
 }
 
-export const STRATEGIES = { CONSERVATIVE, BALANCED, AGGRESSIVE }
+/**
+ * USDT Yield: Tether-centric — maximize USDT yield via Aave lending
+ * - 70% lending (prioritize USDT supply on Aave)
+ * - 10% liquidity (swap-ready for rebalancing)
+ * - 20% reserve (USDT in wallet for bridging/payments)
+ * - Consolidates DAI/USDC into USDT via swap when overweight
+ * - Aggressively supplies USDT to Aave for yield
+ */
+export const USDT_YIELD = {
+  name: 'USDT Yield',
+  targetYield: 8,
+  maxRisk: 30,
+  allocations: {
+    lending: 70,
+    liquidity: 10,
+    reserve: 20
+  },
+  rebalanceThreshold: 5,
+  // USDT-centric preferences
+  baseCurrency: 'USDT',
+  consolidateToBase: true,       // swap DAI/USDC → USDT when overweight
+  consolidateThreshold: 0.30,    // consolidate if non-USDT stables > 30% of total stables
+  lendingPriority: ['USDT', 'USDC', 'DAI', 'WETH'],  // supply order preference
+  minUsdtReserve: 500            // always keep >= $500 USDT in wallet
+}
+
+export const STRATEGIES = { CONSERVATIVE, BALANCED, AGGRESSIVE, USDT_YIELD }

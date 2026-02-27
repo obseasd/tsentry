@@ -1,12 +1,14 @@
 // Tsentry — Treasury Agent Core
-// Autonomous EVM treasury management with real on-chain execution
+// Autonomous EVM treasury management with WDK wallet + real on-chain execution
 
+import { createWdkWallet } from '../wdk/wallet-adapter.js'
 import { createWalletFromEnv } from '../evm/wallet.js'
 import { AaveLending } from '../evm/aave.js'
 import { UniswapSwap } from '../evm/swap.js'
 import { Usdt0Bridge } from '../evm/bridge.js'
 import { calculatePortfolioValue, getPrices } from '../evm/pricing.js'
 import { STRATEGIES } from './strategies.js'
+import { LlmReasoning } from './llm.js'
 
 /**
  * TreasuryAgent — full autonomous loop:
@@ -18,9 +20,11 @@ export class TreasuryAgent {
     this.aave = null
     this.swap = null
     this.bridge = null
+    this.llm = null
     this.strategy = null
     this.active = false
     this.paused = false
+    this.llmEnabled = true // LLM reasoning on by default
 
     // State
     this.balances = {}
@@ -42,9 +46,24 @@ export class TreasuryAgent {
     this._cycleCount = 0
   }
 
-  /** Initialize with real wallet + Aave connection */
+  /** Initialize with WDK wallet (primary) or ethers.js fallback */
   async init () {
-    this.wallet = createWalletFromEnv()
+    // Primary: WDK wallet from seed phrase
+    if (process.env.WDK_SEED) {
+      try {
+        this.wallet = await createWdkWallet()
+        this.walletSource = 'wdk'
+        this.log('wdk', `WDK wallet initialized — ${this.wallet.address}`, this.wallet.getInfo())
+      } catch (e) {
+        this.log('wdk', `WDK init failed: ${e.message} — falling back to ethers.js`)
+        this.wallet = createWalletFromEnv()
+        this.walletSource = 'ethers'
+      }
+    } else {
+      // Fallback: direct ethers.js from private key
+      this.wallet = createWalletFromEnv()
+      this.walletSource = 'ethers'
+    }
 
     this.aave = new AaveLending({
       signer: this.wallet.signer,
@@ -67,8 +86,28 @@ export class TreasuryAgent {
     this.bridgeChains = this.bridge.getSupportedChains()
     this.bridgeRoutes = this.bridge.getRoutes('ethereum')
 
+    // LLM reasoning engine
+    if (process.env.ANTHROPIC_API_KEY) {
+      try {
+        this.llm = new LlmReasoning()
+        const ok = await this.llm.healthCheck()
+        if (ok) {
+          this.log('llm', 'LLM reasoning engine connected', { model: this.llm.model })
+        } else {
+          this.log('llm', 'LLM health check failed — falling back to rules')
+          this.llm = null
+        }
+      } catch (e) {
+        this.log('llm', `LLM init failed: ${e.message} — falling back to rules`)
+        this.llm = null
+      }
+    } else {
+      this.log('llm', 'No ANTHROPIC_API_KEY — using rule-based evaluation only')
+    }
+
     await this.refresh()
-    this.log('init', `Agent initialized — wallet ${this.wallet.address}`, {
+    this.log('init', `Agent initialized — wallet ${this.wallet.address} (${this.walletSource})`, {
+      walletSource: this.walletSource,
       balances: this.balances,
       supplied: this.supplied,
       swapPairs: this.swapPairs.map(p => `${p.tokenA}/${p.tokenB}`),
@@ -115,14 +154,70 @@ export class TreasuryAgent {
   }
 
   /**
-   * Evaluate current state and generate proposed actions
+   * Evaluate current state — LLM-powered with rule-based fallback
    * @returns {Array<object>} actions
    */
   async evaluate () {
     if (!this.strategy) return []
+
+    // Always run rule-based evaluation as safety baseline
+    const ruleActions = this._evaluateRules()
+
+    // If LLM is available and enabled, use it for intelligent reasoning
+    if (this.llm && this.llmEnabled) {
+      try {
+        const snapshot = this.getSnapshot()
+        const decision = await this.llm.reason(snapshot, {
+          ruleBasedActions: ruleActions
+        })
+
+        // Store latest reasoning for dashboard
+        this._lastLlmDecision = decision
+
+        this.log('llm_reason', decision.reasoning, {
+          market: decision.market_assessment,
+          risk: decision.risk_level,
+          actions: decision.actions.length,
+          model: decision._meta?.model,
+          latencyMs: decision._meta?.latencyMs,
+          tokens: decision._meta?.inputTokens + decision._meta?.outputTokens
+        })
+
+        // Merge: LLM actions + any critical rule-based alerts the LLM may have missed
+        const llmActionTypes = new Set(decision.actions.map(a => `${a.type}:${a.token || ''}`))
+        const criticalRuleAlerts = ruleActions.filter(a =>
+          a.priority === 'critical' && !llmActionTypes.has(`${a.type}:${a.token || ''}`)
+        )
+
+        const merged = [...decision.actions, ...criticalRuleAlerts]
+
+        // Adjust next check interval if suggested
+        if (decision.next_check_suggestion && this.active) {
+          const ms = this._parseInterval(decision.next_check_suggestion)
+          if (ms && ms !== this.pollIntervalMs) {
+            this.pollIntervalMs = ms
+            this.log('llm_interval', `LLM suggests next check in ${decision.next_check_suggestion}`)
+          }
+        }
+
+        return merged
+      } catch (e) {
+        this.logError('llm_reason', e)
+        this.log('llm_fallback', `LLM reasoning failed — using rule-based: ${e.message}`)
+        // Fall through to rule-based
+      }
+    }
+
+    return ruleActions
+  }
+
+  /**
+   * Rule-based evaluation — deterministic safety net
+   * @returns {Array<object>} actions
+   */
+  _evaluateRules () {
     const actions = []
 
-    // Compute total portfolio value in USD terms
     const ethPrice = this.prices?.ETH?.usd || 2600
     const walletUSD = (this.balances.USDT || 0) + (this.balances.DAI || 0) +
       (this.balances.USDC || 0) + (this.balances.WETH || 0) * ethPrice +
@@ -142,15 +237,21 @@ export class TreasuryAgent {
       const targetDeltaUSD = (drift / 100) * totalUSD
 
       if (drift > 0) {
-        // Need to supply more
-        // Prioritize: WETH (no supply cap on Sepolia), then stablecoins
         const capped = this._supplyCapped || new Set()
-        const supplyable = [
-          { token: 'WETH', bal: this.balances.WETH || 0, valuePerUnit: ethPrice, minKeep: 0.001 },
-          { token: 'USDT', bal: this.balances.USDT || 0, valuePerUnit: 1, minKeep: 10 },
-          { token: 'DAI', bal: this.balances.DAI || 0, valuePerUnit: 1, minKeep: 10 },
-          { token: 'USDC', bal: this.balances.USDC || 0, valuePerUnit: 1, minKeep: 10 }
-        ].filter(s => s.bal > s.minKeep && !capped.has(s.token))
+        const lendingOrder = this.strategy.lendingPriority || ['WETH', 'USDT', 'DAI', 'USDC']
+        const minUsdtReserve = this.strategy.minUsdtReserve || 10
+
+        const supplyDefs = {
+          WETH: { bal: this.balances.WETH || 0, valuePerUnit: ethPrice, minKeep: 0.001 },
+          USDT: { bal: this.balances.USDT || 0, valuePerUnit: 1, minKeep: Math.max(10, minUsdtReserve) },
+          DAI: { bal: this.balances.DAI || 0, valuePerUnit: 1, minKeep: 10 },
+          USDC: { bal: this.balances.USDC || 0, valuePerUnit: 1, minKeep: 10 }
+        }
+
+        const supplyable = lendingOrder
+          .filter(t => supplyDefs[t])
+          .map(t => ({ token: t, ...supplyDefs[t] }))
+          .filter(s => s.bal > s.minKeep && !capped.has(s.token))
 
         let remainingUSD = Math.abs(targetDeltaUSD)
         for (const s of supplyable) {
@@ -160,7 +261,6 @@ export class TreasuryAgent {
           const useUnits = useUSD / s.valuePerUnit
           if (useUnits < (s.token === 'WETH' ? 0.0001 : 1)) continue
 
-          // Round appropriately
           const amount = s.token === 'WETH'
             ? Math.floor(useUnits * 1e6) / 1e6
             : Math.floor(useUnits * 100) / 100
@@ -175,7 +275,6 @@ export class TreasuryAgent {
           remainingUSD -= useUSD
         }
       } else {
-        // Need to withdraw — from supplied positions
         const withdrawable = Object.entries(this.supplied)
           .filter(([, v]) => v > 0.0001)
           .map(([token, bal]) => ({
@@ -205,7 +304,7 @@ export class TreasuryAgent {
       }
     }
 
-    // Health factor monitoring (if we have borrows)
+    // Health factor monitoring
     if (this.aaveAccount && this.aaveAccount.totalDebtUSD > 0) {
       if (this.aaveAccount.healthFactor < 1.5) {
         actions.push({
@@ -217,20 +316,44 @@ export class TreasuryAgent {
       }
     }
 
-    // Stablecoin concentration — rebalance across stables via swap
+    // Stablecoin rebalance — USDT-centric or equal-weight
     const stableBals = { USDT: this.balances.USDT || 0, DAI: this.balances.DAI || 0, USDC: this.balances.USDC || 0 }
     const totalStable = stableBals.USDT + stableBals.DAI + stableBals.USDC
-    if (totalStable > 100) {
+
+    if (totalStable > 100 && this.strategy.consolidateToBase && this.strategy.baseCurrency === 'USDT') {
+      // USDT-centric: consolidate DAI/USDC → USDT when non-USDT share exceeds threshold
+      const nonUsdt = stableBals.DAI + stableBals.USDC
+      const threshold = this.strategy.consolidateThreshold || 0.30
+      if (nonUsdt > totalStable * threshold) {
+        for (const sym of ['DAI', 'USDC']) {
+          const bal = stableBals[sym]
+          if (bal > 100 && this._hasPair(sym, 'USDT')) {
+            // Keep $50 of each non-USDT stable for diversity, swap the rest
+            const swapAmt = Math.floor((bal - 50) * 100) / 100
+            if (swapAmt > 50) {
+              actions.push({
+                type: 'swap',
+                tokenIn: sym,
+                tokenOut: 'USDT',
+                amount: swapAmt,
+                reason: `USDT-centric: consolidate ${swapAmt} ${sym} → USDT (non-USDT at ${((nonUsdt / totalStable) * 100).toFixed(0)}%, threshold ${(threshold * 100).toFixed(0)}%)`,
+                priority: 'medium'
+              })
+            }
+          }
+        }
+      }
+    } else if (totalStable > 100) {
+      // Equal-weight: rebalance across stables
       const idealPer = totalStable / 3
       for (const [sym, bal] of Object.entries(stableBals)) {
         const excess = bal - idealPer
-        // If one stablecoin is >60% of total stables, swap some to the lowest
         if (excess > totalStable * 0.25) {
           const lowestSym = Object.entries(stableBals)
             .filter(([s]) => s !== sym)
             .sort((a, b) => a[1] - b[1])[0]?.[0]
           if (lowestSym && this._hasPair(sym, lowestSym)) {
-            const swapAmt = Math.floor(excess * 0.4 * 100) / 100 // swap 40% of excess
+            const swapAmt = Math.floor(excess * 0.4 * 100) / 100
             if (swapAmt > 10) {
               actions.push({
                 type: 'swap',
@@ -257,6 +380,15 @@ export class TreasuryAgent {
     }
 
     return actions
+  }
+
+  /** Parse interval string to ms */
+  _parseInterval (str) {
+    const match = str.match(/^(\d+)(s|m|h)$/)
+    if (!match) return null
+    const val = parseInt(match[1])
+    const unit = match[2]
+    return val * ({ s: 1000, m: 60_000, h: 3_600_000 }[unit])
   }
 
   /** Check if a swap pair exists */
@@ -452,6 +584,8 @@ export class TreasuryAgent {
   getSnapshot () {
     return {
       address: this.wallet?.address,
+      walletSource: this.walletSource || 'unknown',
+      wdkInfo: this.wallet?.getInfo?.() || null,
       active: this.active,
       paused: this.paused,
       cycle: this._cycleCount,
@@ -465,6 +599,12 @@ export class TreasuryAgent {
       swapPairs: this.swapPairs,
       bridgeChains: this.bridgeChains,
       bridgeRoutes: this.bridgeRoutes,
+      llm: {
+        enabled: this.llmEnabled,
+        connected: !!this.llm,
+        model: this.llm?.model || null,
+        lastDecision: this._lastLlmDecision || null
+      },
       recentActions: this.actionLog.slice(-50),
       recentErrors: this.errors.slice(-10)
     }

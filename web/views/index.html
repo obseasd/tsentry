@@ -71,7 +71,29 @@
     .log-entry .type.execute, .log-entry .type.execute_done { color: var(--purple); }
     .log-entry .type.alert { color: var(--yellow); }
     .log-entry .type.error { color: var(--red); }
+    .log-entry .type.llm_reason, .log-entry .type.llm_fallback { color: #ff79c6; }
     .log-scroll { max-height: 350px; overflow-y: auto; }
+
+    /* LLM reasoning panel */
+    .llm-panel { border-color: #ff79c622; }
+    .llm-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; }
+    .llm-status { display: flex; align-items: center; gap: 0.5rem; }
+    .llm-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .llm-dot.on { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .llm-dot.off { background: var(--red); }
+    .llm-reasoning { background: #1a1a2e; border-radius: 6px; padding: 0.75rem; font-size: 0.8rem; line-height: 1.5; margin-bottom: 0.75rem; border-left: 3px solid #ff79c6; }
+    .llm-meta { display: flex; gap: 1rem; font-size: 0.7rem; color: var(--muted); flex-wrap: wrap; }
+    .llm-meta .pill { padding: 0.15rem 0.5rem; border-radius: 10px; font-weight: 600; font-size: 0.65rem; }
+    .llm-meta .bullish { background: #50fa7b22; color: var(--green); }
+    .llm-meta .bearish { background: #ff555522; color: var(--red); }
+    .llm-meta .neutral { background: #f1fa8c22; color: var(--yellow); }
+    .llm-meta .uncertain { background: #8be9fd22; color: var(--blue); }
+    .llm-actions { margin-top: 0.75rem; }
+    .llm-action { display: flex; justify-content: space-between; align-items: center; padding: 0.4rem 0.5rem; margin: 0.3rem 0; border-radius: 5px; font-size: 0.75rem; background: #ffffff06; }
+    .llm-action .conf { font-size: 0.65rem; color: var(--muted); }
+    .llm-ask { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
+    .llm-ask input { flex: 1; padding: 0.35rem 0.6rem; border-radius: 5px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-family: inherit; font-size: 0.8rem; }
+    .llm-ask button { padding: 0.35rem 0.8rem; border-radius: 5px; border: 1px solid #ff79c6; background: var(--card); color: #ff79c6; cursor: pointer; font-family: inherit; font-size: 0.75rem; white-space: nowrap; }
 
     /* Strategy picker */
     .strat-grid { display: flex; flex-direction: column; gap: 0.5rem; }
@@ -104,6 +126,7 @@
       <div class="left">
         <h1>Tsentry</h1>
         <span class="badge idle" id="statusBadge">loading</span>
+        <span class="badge" id="wdkBadge" style="display:none;background:#2ecc7122;color:#2ecc71;border:1px solid #2ecc7144">WDK</span>
         <span style="font-size:0.75rem;color:var(--muted)" id="walletAddr"></span>
       </div>
       <div class="controls">
@@ -241,6 +264,30 @@
       </div>
     </div>
 
+    <!-- LLM Reasoning -->
+    <div class="grid-main" style="margin-bottom:1rem">
+      <div class="card llm-panel" style="grid-column: span 2">
+        <div class="llm-header">
+          <div class="llm-status">
+            <div class="llm-dot off" id="llmDot"></div>
+            <h3 style="margin:0">AI Reasoning Engine</h3>
+            <span style="font-size:0.65rem;color:var(--muted)" id="llmModel">—</span>
+          </div>
+          <div style="display:flex;gap:0.5rem;align-items:center">
+            <span style="font-size:0.65rem;color:var(--muted)" id="llmLatency"></span>
+            <button onclick="toggleLlm()" id="btnLlm" style="padding:0.3rem 0.6rem;border-radius:5px;border:1px solid var(--border);background:var(--card);color:var(--text);cursor:pointer;font-family:inherit;font-size:0.7rem">Enable</button>
+          </div>
+        </div>
+        <div id="llmContent">
+          <div style="color:var(--muted);font-size:0.8rem">LLM reasoning not yet active. Enable it or run a cycle to see AI analysis.</div>
+        </div>
+        <div class="llm-ask">
+          <input type="text" id="llmInstruction" placeholder="Ask AI: e.g. 'Should I move more to lending?' or 'Analyze ETH exposure'">
+          <button onclick="askLlm()">Ask AI</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Bottom: Log + Prices -->
     <div class="grid-bottom">
       <div class="card">
@@ -266,11 +313,12 @@
 
   <script>
     const strategies = [
+      { key: 'USDT_YIELD', name: 'USDT Yield', desc: '70% lending, USDT-first — consolidates DAI/USDC → USDT' },
       { key: 'CONSERVATIVE', name: 'Conservative', desc: '60% lending, 10% liquidity, 30% reserve' },
       { key: 'BALANCED', name: 'Balanced', desc: '40% lending, 30% liquidity, 30% reserve' },
       { key: 'AGGRESSIVE', name: 'Aggressive', desc: '50% lending, 40% liquidity, 10% reserve' }
     ];
-    let currentStrategy = 'BALANCED';
+    let currentStrategy = 'USDT_YIELD';
 
     // Build strategy grid
     const stratGrid = document.getElementById('stratGrid');
@@ -292,12 +340,13 @@
 
     async function refresh() {
       try {
-        const [status, portfolio, actions, swapData, bridgeData] = await Promise.all([
+        const [status, portfolio, actions, swapData, bridgeData, llmData] = await Promise.all([
           api('GET', '/api/status'),
           api('GET', '/api/portfolio'),
           api('GET', '/api/actions?limit=80'),
           api('GET', '/api/swap/pairs'),
-          api('GET', '/api/bridge/chains')
+          api('GET', '/api/bridge/chains'),
+          api('GET', '/api/llm')
         ]);
 
         // Status badge
@@ -306,10 +355,17 @@
         else if (status.paused) { badge.textContent = 'paused'; badge.className = 'badge paused'; }
         else { badge.textContent = 'idle'; badge.className = 'badge idle'; }
 
-        // Wallet address
+        // Wallet address + WDK badge
         if (status.address) {
           document.getElementById('walletAddr').textContent =
             status.address.slice(0, 6) + '...' + status.address.slice(-4);
+        }
+        const wdkBadge = document.getElementById('wdkBadge');
+        if (status.walletSource === 'wdk') {
+          wdkBadge.style.display = '';
+          wdkBadge.title = status.wdkInfo ? `${status.wdkInfo.derivationPath}` : 'WDK Wallet';
+        } else {
+          wdkBadge.style.display = 'none';
         }
 
         // KPIs
@@ -437,6 +493,9 @@
             `<span class="tag supplied" style="margin:0.15rem 0">${c.name} <span style="color:var(--muted);font-size:0.6rem">EID:${c.eid}</span></span>`
           ).join('');
         }
+
+        // LLM state
+        if (llmData) renderLlmState(llmData);
       } catch (e) {
         console.error('Refresh error:', e);
       }
@@ -565,6 +624,112 @@
         el.innerHTML = `<span style="color:var(--red)">Bridge failed: ${e.message}</span>`;
       }
     }
+
+    // LLM functions
+    function renderLlmState(llm) {
+      const dot = document.getElementById('llmDot');
+      const btn = document.getElementById('btnLlm');
+      const modelEl = document.getElementById('llmModel');
+      const latencyEl = document.getElementById('llmLatency');
+      const content = document.getElementById('llmContent');
+
+      if (llm.connected) {
+        dot.className = `llm-dot ${llm.enabled ? 'on' : 'off'}`;
+        btn.textContent = llm.enabled ? 'Disable' : 'Enable';
+        btn.style.borderColor = llm.enabled ? 'var(--green)' : 'var(--border)';
+        btn.style.color = llm.enabled ? 'var(--green)' : 'var(--text)';
+        modelEl.textContent = llm.model || '';
+      } else {
+        dot.className = 'llm-dot off';
+        btn.textContent = 'Not Connected';
+        btn.style.borderColor = 'var(--red)';
+        btn.style.color = 'var(--red)';
+        modelEl.textContent = 'No API key';
+      }
+
+      const d = llm.lastDecision;
+      if (!d) return;
+
+      latencyEl.textContent = d._meta?.latencyMs ? `${d._meta.latencyMs}ms` : '';
+
+      let html = '';
+
+      // Reasoning text
+      html += `<div class="llm-reasoning">${escHtml(d.reasoning)}</div>`;
+
+      // Meta pills
+      html += '<div class="llm-meta">';
+      if (d.market_assessment) {
+        html += `<span class="pill ${d.market_assessment}">${d.market_assessment.toUpperCase()}</span>`;
+      }
+      if (d.risk_level) {
+        const riskColor = { low: 'bullish', medium: 'neutral', high: 'bearish', critical: 'bearish' }[d.risk_level] || 'neutral';
+        html += `<span class="pill ${riskColor}">Risk: ${d.risk_level.toUpperCase()}</span>`;
+      }
+      if (d.next_check_suggestion) {
+        html += `<span>Next check: ${d.next_check_suggestion}</span>`;
+      }
+      if (d._meta) {
+        html += `<span>${d._meta.inputTokens || 0}+${d._meta.outputTokens || 0} tokens</span>`;
+      }
+      html += '</div>';
+
+      // Actions
+      if (d.actions?.length > 0) {
+        html += '<div class="llm-actions"><h3 style="margin-bottom:0.3rem">Proposed Actions</h3>';
+        for (const a of d.actions) {
+          const typeColor = {
+            lending_supply: 'var(--purple)',
+            lending_withdraw: 'var(--blue)',
+            swap: '#ff79c6',
+            bridge: 'var(--yellow)',
+            alert: 'var(--red)',
+            hold: 'var(--muted)'
+          }[a.type] || 'var(--text)';
+          html += `<div class="llm-action">
+            <span><span style="color:${typeColor};font-weight:600">${a.type}</span> ${a.token ? a.token : ''} ${a.amount ? a.amount : ''} — ${escHtml(a.reason || '')}</span>
+            <span class="conf">${((a.confidence || 0) * 100).toFixed(0)}%</span>
+          </div>`;
+        }
+        html += '</div>';
+      } else {
+        html += '<div style="margin-top:0.5rem;font-size:0.75rem;color:var(--muted)">No actions proposed — holding position.</div>';
+      }
+
+      content.innerHTML = html;
+    }
+
+    function escHtml(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    async function toggleLlm() {
+      await api('POST', '/api/llm/toggle');
+      await refresh();
+    }
+
+    async function askLlm() {
+      const input = document.getElementById('llmInstruction');
+      const instruction = input.value.trim();
+      if (!instruction) return;
+      const content = document.getElementById('llmContent');
+      content.innerHTML = '<div style="color:#ff79c6;font-size:0.8rem">Thinking...</div>';
+      try {
+        const res = await api('POST', '/api/llm/reason', { instruction });
+        if (res.error) {
+          content.innerHTML = `<div style="color:var(--red);font-size:0.8rem">${escHtml(res.error)}</div>`;
+          return;
+        }
+        input.value = '';
+        await refresh();
+      } catch (e) {
+        content.innerHTML = `<div style="color:var(--red);font-size:0.8rem">Error: ${escHtml(e.message)}</div>`;
+      }
+    }
+
+    document.getElementById('llmInstruction').addEventListener('keydown', e => {
+      if (e.key === 'Enter') askLlm();
+    });
 
     // Init
     refresh();

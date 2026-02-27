@@ -12,7 +12,8 @@
         "USDC_CONTRACT": "${USDC_CONTRACT}",
         "WETH_CONTRACT": "${WETH_CONTRACT}",
         "AAVE_POOL": "${AAVE_POOL}",
-        "AAVE_FAUCET": "${AAVE_FAUCET}"
+        "AAVE_FAUCET": "${AAVE_FAUCET}",
+        "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}"
       }
     }
   }

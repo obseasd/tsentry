@@ -33,6 +33,8 @@ app.get('/api/status', (req, res) => {
     name: 'Tsentry',
     version: '0.1.0',
     address: snap.address,
+    walletSource: snap.walletSource,
+    wdkInfo: snap.wdkInfo,
     active: snap.active,
     paused: snap.paused,
     cycle: snap.cycle,
@@ -93,6 +95,32 @@ app.post('/api/stop', (req, res) => {
 app.post('/api/pause', (req, res) => {
   agent.paused ? agent.resume() : agent.pause()
   res.json({ ok: true, paused: agent.paused })
+})
+
+// ─── API: LLM Control ───
+
+app.get('/api/llm', (req, res) => {
+  const snap = agent.getSnapshot()
+  res.json(snap.llm)
+})
+
+app.post('/api/llm/toggle', (req, res) => {
+  agent.llmEnabled = !agent.llmEnabled
+  res.json({ ok: true, llmEnabled: agent.llmEnabled, connected: !!agent.llm })
+})
+
+app.post('/api/llm/reason', async (req, res) => {
+  try {
+    if (!agent.llm) return res.status(400).json({ error: 'LLM not connected' })
+    const snapshot = agent.getSnapshot()
+    const decision = await agent.llm.reason(snapshot, {
+      userInstruction: req.body.instruction
+    })
+    agent._lastLlmDecision = decision
+    res.json({ ok: true, decision })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
 })
 
 app.post('/api/cycle', async (req, res) => {
@@ -237,8 +265,8 @@ async function boot () {
     console.log(`[tsentry] Balances:`, agent.balances)
     console.log(`[tsentry] Aave supplied:`, agent.supplied)
 
-    // Default strategy
-    agent.setStrategy('BALANCED')
+    // Default strategy — USDT-centric for Tether hackathon
+    agent.setStrategy('USDT_YIELD')
 
     app.listen(PORT, () => {
       console.log(`[tsentry] Dashboard: http://localhost:${PORT}`)

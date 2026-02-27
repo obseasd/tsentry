@@ -22,6 +22,7 @@
   ],
   "license": "Apache-2.0",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@tetherto/wdk-mcp-toolkit": "github:tetherto/wdk-mcp-toolkit",
     "@tetherto/wdk-protocol-bridge-usdt0-evm": "^1.0.0-beta.2",

@@ -1,0 +1,292 @@
+// Tsentry — LLM Reasoning Engine
+// Uses Claude to analyze treasury state and propose intelligent actions
+
+import Anthropic from '@anthropic-ai/sdk'
+
+const SYSTEM_PROMPT = `You are Tsentry, an autonomous multi-chain treasury management agent.
+Your job is to analyze the current treasury state and propose optimal actions.
+
+You manage a USDT-focused portfolio across:
+- Wallet holdings (ETH, USDT, DAI, USDC, WETH)
+- Aave V3 lending positions (supply for yield)
+- Uniswap V3 swaps (rebalancing between tokens)
+- USDT0 cross-chain bridge (LayerZero V2)
+
+Key principles:
+1. USDT is the base currency — maximize USDT-denominated yield
+2. Preserve capital first, optimize yield second
+3. Keep enough ETH for gas (>0.002 ETH minimum)
+4. Monitor health factor if any borrows exist (>1.5 safe, <1.2 critical)
+5. Only propose actions with clear reasoning
+6. Consider gas costs vs. benefit — don't rebalance $5 if gas costs $2
+
+Strategy-specific behavior:
+- "USDT Yield" strategy: aggressively consolidate DAI/USDC → USDT via swap, then supply USDT to Aave.
+  Keep minimum $500 USDT in wallet as reserve. Supply order: USDT first, then USDC, DAI, WETH.
+  Target 70% in Aave lending. This is the default Tether-centric strategy.
+- "Conservative/Balanced/Aggressive": standard equal-weight stablecoin diversification.
+
+You MUST respond with valid JSON matching this schema:
+{
+  "reasoning": "1-3 sentence analysis of current state",
+  "market_assessment": "bullish | bearish | neutral | uncertain",
+  "risk_level": "low | medium | high | critical",
+  "actions": [
+    {
+      "type": "lending_supply | lending_withdraw | swap | bridge | alert | hold",
+      "token": "TOKEN_SYMBOL",
+      "tokenOut": "TOKEN_SYMBOL (for swaps)",
+      "amount": 123.45,
+      "reason": "why this action",
+      "priority": "critical | high | medium | low",
+      "confidence": 0.85
+    }
+  ],
+  "next_check_suggestion": "30s | 1m | 5m | 15m | 1h"
+}
+
+If no action is needed, return empty actions array with reasoning explaining why.
+Never propose actions you're not confident about (confidence < 0.5).`
+
+export class LlmReasoning {
+  constructor (opts = {}) {
+    this.apiKey = opts.apiKey || process.env.ANTHROPIC_API_KEY
+    if (!this.apiKey) {
+      throw new Error('ANTHROPIC_API_KEY required — set in .env or pass apiKey option')
+    }
+
+    this.client = new Anthropic({ apiKey: this.apiKey })
+    this.model = opts.model || 'claude-haiku-4-5-20251001'
+    this.maxTokens = opts.maxTokens || 1024
+    this.history = [] // conversation memory for context
+    this.maxHistory = 10 // keep last N reasoning rounds
+  }
+
+  /**
+   * Build a state summary for the LLM
+   * @param {object} snapshot — agent.getSnapshot()
+   * @param {object} opts — extra context
+   * @returns {string} formatted state
+   */
+  buildStatePrompt (snapshot, opts = {}) {
+    const lines = []
+
+    lines.push('=== TREASURY STATE ===')
+    lines.push(`Timestamp: ${new Date().toISOString()}`)
+    lines.push(`Cycle: #${snapshot.cycle}`)
+    lines.push(`Strategy: ${snapshot.strategy?.name || 'none'} (target lending: ${snapshot.strategy?.allocations?.lending || 0}%)`)
+    lines.push(`Agent: ${snapshot.active ? 'ACTIVE' : 'STOPPED'} ${snapshot.paused ? '(PAUSED)' : ''}`)
+    lines.push('')
+
+    // Wallet balances
+    lines.push('--- Wallet Balances ---')
+    for (const [sym, bal] of Object.entries(snapshot.balances || {})) {
+      if (bal > 0) {
+        const usdVal = sym === 'ETH' || sym === 'WETH'
+          ? `(~$${(bal * (snapshot.prices?.ETH?.usd || 2600)).toFixed(2)})`
+          : `(~$${bal.toFixed(2)})`
+        lines.push(`  ${sym}: ${bal} ${usdVal}`)
+      }
+    }
+
+    // Supplied (Aave)
+    lines.push('')
+    lines.push('--- Aave Supplied ---')
+    const hasSupplied = Object.values(snapshot.supplied || {}).some(v => v > 0)
+    if (hasSupplied) {
+      for (const [sym, amt] of Object.entries(snapshot.supplied)) {
+        if (amt > 0) lines.push(`  ${sym}: ${amt}`)
+      }
+    } else {
+      lines.push('  (none)')
+    }
+
+    // Aave account
+    if (snapshot.aaveAccount) {
+      const a = snapshot.aaveAccount
+      lines.push('')
+      lines.push('--- Aave Account ---')
+      lines.push(`  Total Collateral: $${a.totalCollateralUSD?.toFixed(2) || '0'}`)
+      lines.push(`  Total Debt: $${a.totalDebtUSD?.toFixed(2) || '0'}`)
+      lines.push(`  Available Borrow: $${a.availableBorrowUSD?.toFixed(2) || '0'}`)
+      if (a.healthFactor) lines.push(`  Health Factor: ${a.healthFactor}`)
+    }
+
+    // Portfolio
+    lines.push('')
+    lines.push('--- Portfolio ---')
+    lines.push(`  Lending Allocation: ${snapshot.lendingPct}%`)
+    if (snapshot.portfolio) {
+      lines.push(`  Total Value: $${snapshot.portfolio.totalUSD?.toFixed(2) || '?'}`)
+    }
+
+    // Prices
+    lines.push('')
+    lines.push('--- Market Prices ---')
+    for (const [sym, data] of Object.entries(snapshot.prices || {})) {
+      if (data?.usd) {
+        const change = data.usd_24h_change
+        const arrow = change > 0 ? '↑' : change < 0 ? '↓' : '→'
+        lines.push(`  ${sym}: $${data.usd} ${arrow}${Math.abs(change || 0).toFixed(1)}% (24h)`)
+      }
+    }
+
+    // Available swap pairs
+    if (snapshot.swapPairs?.length > 0) {
+      lines.push('')
+      lines.push('--- Available Swaps ---')
+      lines.push(`  ${snapshot.swapPairs.map(p => `${p.tokenA}/${p.tokenB}`).join(', ')}`)
+    }
+
+    // Bridge routes
+    if (snapshot.bridgeChains?.length > 0) {
+      lines.push('')
+      lines.push('--- Bridge Routes (USDT0) ---')
+      lines.push(`  Chains: ${snapshot.bridgeChains.map(c => c.name).join(', ')}`)
+    }
+
+    // Recent actions for context
+    const recentActions = (snapshot.recentActions || []).slice(-5)
+    if (recentActions.length > 0) {
+      lines.push('')
+      lines.push('--- Recent Actions (last 5) ---')
+      for (const a of recentActions) {
+        lines.push(`  [${a.type}] ${a.message} (${a.ts})`)
+      }
+    }
+
+    // Recent errors
+    if (snapshot.recentErrors?.length > 0) {
+      lines.push('')
+      lines.push('--- Recent Errors ---')
+      for (const e of snapshot.recentErrors.slice(-3)) {
+        lines.push(`  [${e.context}] ${e.message} (${e.ts})`)
+      }
+    }
+
+    // Strategy constraints
+    if (snapshot.strategy) {
+      lines.push('')
+      lines.push('--- Strategy Constraints ---')
+      lines.push(`  Target Yield: ${snapshot.strategy.targetYield}%`)
+      lines.push(`  Max Risk: ${snapshot.strategy.maxRisk}`)
+      lines.push(`  Allocations: lending=${snapshot.strategy.allocations.lending}%, liquidity=${snapshot.strategy.allocations.liquidity}%, reserve=${snapshot.strategy.allocations.reserve}%`)
+      lines.push(`  Rebalance Threshold: ${snapshot.strategy.rebalanceThreshold}%`)
+    }
+
+    // Extra context (e.g. user instructions)
+    if (opts.userInstruction) {
+      lines.push('')
+      lines.push(`--- User Instruction ---`)
+      lines.push(`  ${opts.userInstruction}`)
+    }
+
+    return lines.join('\n')
+  }
+
+  /**
+   * Run LLM reasoning on current state
+   * @param {object} snapshot — from agent.getSnapshot()
+   * @param {object} opts — { userInstruction?, ruleBasedActions? }
+   * @returns {object} parsed LLM decision
+   */
+  async reason (snapshot, opts = {}) {
+    const statePrompt = this.buildStatePrompt(snapshot, opts)
+
+    // Include rule-based actions as advisory
+    let userMessage = statePrompt
+    if (opts.ruleBasedActions?.length > 0) {
+      userMessage += '\n\n--- Rule-Based Suggestions (for reference) ---'
+      for (const a of opts.ruleBasedActions) {
+        userMessage += `\n  [${a.type}] ${a.reason} (priority: ${a.priority})`
+      }
+      userMessage += '\n\nConsider these rule-based suggestions but use your own judgment. You may agree, modify, or override them.'
+    }
+
+    userMessage += '\n\nAnalyze the treasury state and propose actions. Respond with JSON only.'
+
+    // Build messages with history for continuity
+    const messages = [
+      ...this.history,
+      { role: 'user', content: userMessage }
+    ]
+
+    const startTime = Date.now()
+
+    const response = await this.client.messages.create({
+      model: this.model,
+      max_tokens: this.maxTokens,
+      system: SYSTEM_PROMPT,
+      messages
+    })
+
+    const elapsed = Date.now() - startTime
+    const text = response.content[0]?.text || ''
+
+    // Parse JSON from response (handle markdown code blocks)
+    let decision
+    try {
+      const jsonStr = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+      decision = JSON.parse(jsonStr)
+    } catch (parseErr) {
+      // Try extracting JSON from within the text
+      const match = text.match(/\{[\s\S]*\}/)
+      if (match) {
+        decision = JSON.parse(match[0])
+      } else {
+        throw new Error(`LLM returned invalid JSON: ${text.slice(0, 200)}`)
+      }
+    }
+
+    // Validate structure
+    if (!decision.reasoning || !Array.isArray(decision.actions)) {
+      throw new Error(`LLM response missing required fields: ${JSON.stringify(decision).slice(0, 200)}`)
+    }
+
+    // Filter low-confidence actions
+    decision.actions = decision.actions.filter(a => (a.confidence || 0) >= 0.5)
+
+    // Add metadata
+    decision._meta = {
+      model: this.model,
+      latencyMs: elapsed,
+      inputTokens: response.usage?.input_tokens,
+      outputTokens: response.usage?.output_tokens,
+      timestamp: new Date().toISOString()
+    }
+
+    // Update conversation history
+    this.history.push(
+      { role: 'user', content: `[Cycle #${snapshot.cycle}] ${statePrompt.slice(0, 500)}...` },
+      { role: 'assistant', content: text }
+    )
+    // Trim history
+    if (this.history.length > this.maxHistory * 2) {
+      this.history = this.history.slice(-this.maxHistory * 2)
+    }
+
+    return decision
+  }
+
+  /**
+   * Quick health check — is the LLM reachable?
+   */
+  async healthCheck () {
+    try {
+      const response = await this.client.messages.create({
+        model: this.model,
+        max_tokens: 32,
+        messages: [{ role: 'user', content: 'Reply with just: {"status":"ok"}' }]
+      })
+      const text = response.content[0]?.text || ''
+      return text.includes('ok')
+    } catch (e) {
+      return false
+    }
+  }
+
+  /** Reset conversation history */
+  resetHistory () {
+    this.history = []
+  }
+}
