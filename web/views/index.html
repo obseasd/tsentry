@@ -4,47 +4,150 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Tsentry — Autonomous Treasury Agent</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    :root { --bg: #0a0a0f; --card: #12121f; --border: #1a1a2e; --green: #50fa7b; --red: #ff5555; --yellow: #f1fa8c; --blue: #8be9fd; --purple: #bd93f9; --text: #e0e0e0; --muted: #666; }
+    :root {
+      --bg: #0d1117; --bg-alt: #0a0e14; --card: #161b22; --card-hover: #1c2129;
+      --border: #30363d; --border-light: #3d444d;
+      --green: #3fb950; --green-bright: #56d364; --green-bg: #3fb95015;
+      --red: #f85149; --red-bg: #f8514915;
+      --yellow: #d29922; --yellow-bg: #d2992215;
+      --blue: #58a6ff; --blue-bg: #58a6ff15;
+      --purple: #bc8cff; --purple-bg: #bc8cff15;
+      --pink: #f778ba;
+      --orange: #f0883e;
+      --text: #c9d1d9; --text-bright: #f0f6fc;
+      --muted: #8b949e; --muted-dim: #484f58;
+      --shadow: 0 3px 12px rgba(0,0,0,0.4);
+      --radius: 12px;
+    }
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'SF Mono', 'Fira Code', monospace; background: var(--bg); color: var(--text); min-height: 100vh; }
-    .container { max-width: 1400px; margin: 0 auto; padding: 1.5rem; }
+    body {
+      font-family: 'IBM Plex Mono', 'SF Mono', monospace;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      background-image: radial-gradient(ellipse at top, #161b2244 0%, transparent 50%);
+    }
+    .container { max-width: 1440px; margin: 0 auto; padding: 1.5rem 2rem; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--muted-dim); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
 
     /* Header */
-    header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border); padding-bottom: 1rem; flex-wrap: wrap; gap: 0.75rem; }
-    header .left { display: flex; align-items: center; gap: 1rem; }
-    header h1 { font-size: 1.4rem; color: var(--green); font-weight: 700; }
-    .badge { font-size: 0.75rem; padding: 0.2rem 0.6rem; border-radius: 10px; font-weight: 600; }
-    .badge.active { background: #50fa7b22; color: var(--green); border: 1px solid #50fa7b44; }
-    .badge.idle { background: #f1fa8c22; color: var(--yellow); border: 1px solid #f1fa8c44; }
-    .badge.paused { background: #ff555522; color: var(--red); border: 1px solid #ff555544; }
-    .controls { display: flex; gap: 0.5rem; }
-    .controls button { padding: 0.4rem 0.8rem; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); cursor: pointer; font-size: 0.75rem; font-family: inherit; transition: all 0.15s; }
-    .controls button:hover { border-color: var(--blue); color: var(--blue); }
-    .controls button.primary { border-color: var(--green); color: var(--green); }
-    .controls button.danger { border-color: var(--red); color: var(--red); }
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 2rem; padding-bottom: 1.25rem;
+      border-bottom: 1px solid var(--border); flex-wrap: wrap; gap: 1rem;
+    }
+    header .left { display: flex; align-items: center; gap: 0.75rem; }
+    header h1 {
+      font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em;
+      color: #e74c3c;
+    }
+    .logo-img { height: 36px; width: 36px; object-fit: contain; }
+    .header-sep { width: 1px; height: 24px; background: var(--border); }
+    .badge {
+      font-size: 0.7rem; padding: 0.25rem 0.75rem; border-radius: 20px;
+      font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+      transition: all 0.3s ease;
+    }
+    .badge.active {
+      background: var(--green-bg); color: var(--green); border: 1px solid #3fb95044;
+      box-shadow: 0 0 12px #3fb95022;
+      animation: pulse-green 2s ease-in-out infinite;
+    }
+    .badge.idle { background: var(--yellow-bg); color: var(--yellow); border: 1px solid #d2992244; }
+    .badge.paused { background: var(--red-bg); color: var(--red); border: 1px solid #f8514944; }
+    @keyframes pulse-green {
+      0%, 100% { box-shadow: 0 0 8px #3fb95015; }
+      50% { box-shadow: 0 0 16px #3fb95030; }
+    }
+
+    .controls { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .controls button {
+      padding: 0.45rem 1rem; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--card); color: var(--muted); cursor: pointer;
+      font-size: 0.75rem; font-family: inherit; font-weight: 500;
+      transition: all 0.2s ease; position: relative; overflow: hidden;
+    }
+    .controls button:hover {
+      border-color: var(--blue); color: var(--blue);
+      background: var(--blue-bg); transform: translateY(-1px);
+      box-shadow: 0 2px 8px #58a6ff15;
+    }
+    .controls button:active { transform: translateY(0); }
+    .controls button.primary {
+      border-color: #3fb95066; color: var(--green);
+      background: var(--green-bg);
+    }
+    .controls button.primary:hover {
+      border-color: var(--green); box-shadow: 0 2px 12px #3fb95025;
+      background: #3fb95020;
+    }
+    .controls button.danger { border-color: #f8514944; color: var(--red); }
+    .controls button.danger:hover {
+      border-color: var(--red); background: var(--red-bg);
+      box-shadow: 0 2px 8px #f8514915;
+    }
 
     /* Grid layout */
-    .grid-top { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1rem; }
-    .grid-main { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
-    .grid-bottom { display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; }
+    .grid-top { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.25rem; }
+    .grid-main { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin-bottom: 1.25rem; }
+    .grid-bottom { display: grid; grid-template-columns: 2fr 1fr; gap: 1.25rem; }
 
     /* Cards */
-    .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; }
-    .card h3 { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.6rem; font-weight: 500; }
-    .card .value { font-size: 1.8rem; font-weight: 700; color: #fff; }
-    .card .value.sm { font-size: 1.2rem; }
-    .card .sub { font-size: 0.75rem; color: var(--muted); margin-top: 0.2rem; }
+    .card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 1.25rem;
+      transition: border-color 0.25s ease, box-shadow 0.25s ease;
+    }
+    .card:hover {
+      border-color: var(--border-light);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+    }
+    .card h3 {
+      font-size: 0.68rem; color: var(--muted); text-transform: uppercase;
+      letter-spacing: 0.1em; margin-bottom: 0.75rem; font-weight: 500;
+    }
+    .card .value {
+      font-size: 1.8rem; font-weight: 700; color: var(--text-bright);
+      letter-spacing: -0.02em;
+    }
+    .card .value.sm { font-size: 1.3rem; }
+    .card .sub { font-size: 0.75rem; color: var(--muted); margin-top: 0.25rem; }
+
+    /* KPI cards — top border accent */
+    .kpi-portfolio { border-top: 2px solid var(--green); }
+    .kpi-wallet { border-top: 2px solid var(--blue); }
+    .kpi-supplied { border-top: 2px solid var(--purple); }
+    .kpi-health { border-top: 2px solid var(--orange); }
 
     /* Balances table */
     .bal-table { width: 100%; border-collapse: collapse; }
-    .bal-table th { font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; padding: 0.4rem 0; text-align: left; border-bottom: 1px solid var(--border); font-weight: 500; }
-    .bal-table td { padding: 0.5rem 0; border-bottom: 1px solid #ffffff08; font-size: 0.85rem; }
+    .bal-table th {
+      font-size: 0.65rem; color: var(--muted); text-transform: uppercase;
+      letter-spacing: 0.06em; padding: 0.5rem 0; text-align: left;
+      border-bottom: 1px solid var(--border); font-weight: 500;
+    }
+    .bal-table td {
+      padding: 0.6rem 0; border-bottom: 1px solid #ffffff06; font-size: 0.85rem;
+      transition: background 0.15s;
+    }
+    .bal-table tr:hover td { background: #ffffff04; }
     .bal-table td:last-child { text-align: right; }
     .bal-table th:last-child { text-align: right; }
-    .tag { display: inline-block; font-size: 0.65rem; padding: 0.15rem 0.4rem; border-radius: 4px; font-weight: 600; }
-    .tag.wallet { background: #8be9fd15; color: var(--blue); }
-    .tag.supplied { background: #bd93f915; color: var(--purple); }
+    .tag {
+      display: inline-block; font-size: 0.6rem; padding: 0.2rem 0.5rem;
+      border-radius: 6px; font-weight: 600; letter-spacing: 0.03em;
+    }
+    .tag.wallet { background: var(--blue-bg); color: var(--blue); }
+    .tag.supplied { background: var(--purple-bg); color: var(--purple); }
 
     /* Aave positions */
     .position { display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid #ffffff08; }
@@ -53,79 +156,174 @@
     .position .amt { color: var(--green); }
 
     /* Allocation bar */
-    .alloc-bar { height: 8px; border-radius: 4px; background: var(--border); overflow: hidden; margin: 0.75rem 0; display: flex; }
-    .alloc-bar .segment { height: 100%; transition: width 0.3s; }
-    .alloc-bar .lending { background: var(--purple); }
-    .alloc-bar .reserve { background: var(--blue); }
-    .alloc-legend { display: flex; gap: 1rem; font-size: 0.7rem; color: var(--muted); }
-    .alloc-legend span::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
+    .alloc-bar {
+      height: 6px; border-radius: 3px; background: var(--border);
+      overflow: hidden; margin: 0.75rem 0; display: flex;
+    }
+    .alloc-bar .segment { height: 100%; transition: width 0.5s ease; }
+    .alloc-bar .lending { background: linear-gradient(90deg, var(--purple), #d2a8ff); }
+    .alloc-bar .reserve { background: linear-gradient(90deg, var(--blue), #79c0ff); }
+    .alloc-legend { display: flex; gap: 1.25rem; font-size: 0.7rem; color: var(--muted); }
+    .alloc-legend span::before {
+      content: ''; display: inline-block; width: 8px; height: 8px;
+      border-radius: 2px; margin-right: 6px; vertical-align: middle;
+    }
     .alloc-legend .l::before { background: var(--purple); }
     .alloc-legend .r::before { background: var(--blue); }
 
     /* Action log */
-    .log-entry { font-size: 0.75rem; padding: 0.4rem 0; border-bottom: 1px solid #ffffff06; display: grid; grid-template-columns: 130px 70px 1fr; gap: 0.5rem; }
-    .log-entry .ts { color: var(--muted); }
-    .log-entry .type { font-weight: 600; }
+    .log-entry {
+      font-size: 0.75rem; padding: 0.45rem 0.5rem; margin: 0 -0.5rem;
+      border-bottom: 1px solid #ffffff06; border-radius: 4px;
+      display: grid; grid-template-columns: 120px 80px 1fr; gap: 0.5rem;
+      transition: background 0.15s;
+    }
+    .log-entry:hover { background: #ffffff06; }
+    .log-entry .ts { color: var(--muted-dim); font-size: 0.7rem; }
+    .log-entry .type { font-weight: 600; font-size: 0.7rem; }
     .log-entry .type.init, .log-entry .type.start { color: var(--green); }
     .log-entry .type.strategy { color: var(--blue); }
     .log-entry .type.execute, .log-entry .type.execute_done { color: var(--purple); }
     .log-entry .type.alert { color: var(--yellow); }
     .log-entry .type.error { color: var(--red); }
-    .log-entry .type.llm_reason, .log-entry .type.llm_fallback { color: #ff79c6; }
-    .log-scroll { max-height: 350px; overflow-y: auto; }
+    .log-entry .type.llm_reason, .log-entry .type.llm_fallback { color: var(--pink); }
+    .log-scroll { max-height: 350px; overflow-y: auto; padding-right: 0.25rem; }
 
     /* LLM reasoning panel */
-    .llm-panel { border-color: #ff79c622; }
-    .llm-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; }
+    .llm-panel { border-color: #f778ba22; }
+    .llm-panel:hover { border-color: #f778ba44; }
+    .llm-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
     .llm-status { display: flex; align-items: center; gap: 0.5rem; }
-    .llm-dot { width: 8px; height: 8px; border-radius: 50%; }
-    .llm-dot.on { background: var(--green); box-shadow: 0 0 6px var(--green); }
-    .llm-dot.off { background: var(--red); }
-    .llm-reasoning { background: #1a1a2e; border-radius: 6px; padding: 0.75rem; font-size: 0.8rem; line-height: 1.5; margin-bottom: 0.75rem; border-left: 3px solid #ff79c6; }
-    .llm-meta { display: flex; gap: 1rem; font-size: 0.7rem; color: var(--muted); flex-wrap: wrap; }
-    .llm-meta .pill { padding: 0.15rem 0.5rem; border-radius: 10px; font-weight: 600; font-size: 0.65rem; }
-    .llm-meta .bullish { background: #50fa7b22; color: var(--green); }
-    .llm-meta .bearish { background: #ff555522; color: var(--red); }
-    .llm-meta .neutral { background: #f1fa8c22; color: var(--yellow); }
-    .llm-meta .uncertain { background: #8be9fd22; color: var(--blue); }
-    .llm-actions { margin-top: 0.75rem; }
-    .llm-action { display: flex; justify-content: space-between; align-items: center; padding: 0.4rem 0.5rem; margin: 0.3rem 0; border-radius: 5px; font-size: 0.75rem; background: #ffffff06; }
+    .llm-dot { width: 8px; height: 8px; border-radius: 50%; transition: all 0.3s; }
+    .llm-dot.on { background: var(--green); box-shadow: 0 0 8px var(--green), 0 0 16px #3fb95033; }
+    .llm-dot.off { background: var(--red); box-shadow: 0 0 4px #f8514933; }
+    .llm-reasoning {
+      background: var(--bg-alt); border-radius: 8px; padding: 0.85rem 1rem;
+      font-size: 0.8rem; line-height: 1.6; margin-bottom: 0.75rem;
+      border-left: 3px solid var(--pink);
+    }
+    .llm-meta { display: flex; gap: 0.75rem; font-size: 0.7rem; color: var(--muted); flex-wrap: wrap; align-items: center; }
+    .llm-meta .pill {
+      padding: 0.2rem 0.6rem; border-radius: 20px; font-weight: 600; font-size: 0.6rem;
+      letter-spacing: 0.03em; text-transform: uppercase;
+    }
+    .llm-meta .bullish { background: var(--green-bg); color: var(--green); }
+    .llm-meta .bearish { background: var(--red-bg); color: var(--red); }
+    .llm-meta .neutral { background: var(--yellow-bg); color: var(--yellow); }
+    .llm-meta .uncertain { background: var(--blue-bg); color: var(--blue); }
+    .llm-actions { margin-top: 1rem; }
+    .llm-action {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 0.5rem 0.65rem; margin: 0.35rem 0; border-radius: 8px;
+      font-size: 0.75rem; background: #ffffff06; border: 1px solid #ffffff08;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .llm-action:hover { border-color: #ffffff15; background: #ffffff0a; }
     .llm-action .conf { font-size: 0.65rem; color: var(--muted); }
-    .llm-ask { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
-    .llm-ask input { flex: 1; padding: 0.35rem 0.6rem; border-radius: 5px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-family: inherit; font-size: 0.8rem; }
-    .llm-ask button { padding: 0.35rem 0.8rem; border-radius: 5px; border: 1px solid #ff79c6; background: var(--card); color: #ff79c6; cursor: pointer; font-family: inherit; font-size: 0.75rem; white-space: nowrap; }
+    .llm-ask { display: flex; gap: 0.5rem; margin-top: 1rem; }
+    .llm-ask input {
+      flex: 1; padding: 0.5rem 0.75rem; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--bg);
+      color: var(--text); font-family: inherit; font-size: 0.8rem;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .llm-ask input:focus {
+      outline: none; border-color: var(--pink);
+      box-shadow: 0 0 0 3px #f778ba18;
+    }
+    .llm-ask button {
+      padding: 0.5rem 1rem; border-radius: 8px; border: 1px solid var(--pink);
+      background: #f778ba12; color: var(--pink); cursor: pointer;
+      font-family: inherit; font-size: 0.75rem; font-weight: 600;
+      white-space: nowrap; transition: all 0.2s;
+    }
+    .llm-ask button:hover {
+      background: #f778ba22; box-shadow: 0 2px 8px #f778ba15;
+      transform: translateY(-1px);
+    }
 
     /* Strategy picker */
-    .strat-grid { display: flex; flex-direction: column; gap: 0.5rem; }
-    .strat-opt { padding: 0.6rem; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; transition: all 0.15s; }
-    .strat-opt:hover { border-color: var(--blue); }
-    .strat-opt.active { border-color: var(--green); background: #50fa7b08; }
-    .strat-opt .name { font-weight: 600; font-size: 0.8rem; }
-    .strat-opt .desc { font-size: 0.7rem; color: var(--muted); margin-top: 0.15rem; }
+    .strat-grid { display: flex; flex-direction: column; gap: 0.4rem; }
+    .strat-opt {
+      padding: 0.65rem 0.75rem; border: 1px solid var(--border);
+      border-radius: 8px; cursor: pointer; transition: all 0.2s ease;
+    }
+    .strat-opt:hover { border-color: var(--border-light); background: #ffffff04; }
+    .strat-opt.active {
+      border-color: #3fb95066; background: var(--green-bg);
+      box-shadow: inset 0 0 0 1px #3fb95022;
+    }
+    .strat-opt .name { font-weight: 600; font-size: 0.8rem; color: var(--text-bright); }
+    .strat-opt.active .name { color: var(--green); }
+    .strat-opt .desc { font-size: 0.68rem; color: var(--muted); margin-top: 0.2rem; }
 
     /* Quick actions */
     .quick-form { display: flex; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap; }
-    .quick-form select, .quick-form input { padding: 0.3rem 0.5rem; border-radius: 5px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-family: inherit; font-size: 0.8rem; }
-    .quick-form input { width: 100px; }
+    .quick-form select, .quick-form input {
+      padding: 0.4rem 0.6rem; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--bg); color: var(--text); font-family: inherit; font-size: 0.8rem;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .quick-form select:focus, .quick-form input:focus {
+      outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px #58a6ff15;
+    }
+    .quick-form input { width: 110px; }
+    .quick-form button {
+      padding: 0.4rem 0.8rem; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--card); color: var(--text); cursor: pointer;
+      font-family: inherit; font-size: 0.8rem; font-weight: 500;
+      transition: all 0.2s;
+    }
+    .quick-form button:hover {
+      border-color: var(--blue); color: var(--blue);
+      background: var(--blue-bg); transform: translateY(-1px);
+    }
+
+    /* Section labels */
+    .section-label {
+      font-size: 0.6rem; color: var(--muted-dim); text-transform: uppercase;
+      letter-spacing: 0.15em; font-weight: 600; margin-bottom: 0.75rem;
+      padding-bottom: 0.5rem; border-bottom: 1px solid var(--border);
+    }
 
     /* Toast notifications */
     .toast-container { position: fixed; top: 1rem; right: 1rem; z-index: 9999; display: flex; flex-direction: column; gap: 0.5rem; }
-    .toast { padding: 0.6rem 1rem; border-radius: 8px; font-size: 0.8rem; font-family: inherit; animation: toastIn 0.3s ease, toastOut 0.3s ease 2.7s forwards; max-width: 350px; box-shadow: 0 4px 12px #0004; }
-    .toast.success { background: #50fa7b22; border: 1px solid #50fa7b66; color: var(--green); }
-    .toast.info { background: #8be9fd22; border: 1px solid #8be9fd66; color: var(--blue); }
-    .toast.warning { background: #f1fa8c22; border: 1px solid #f1fa8c66; color: var(--yellow); }
-    .toast.error { background: #ff555522; border: 1px solid #ff555566; color: var(--red); }
-    @keyframes toastIn { from { opacity: 0; transform: translateX(100px); } to { opacity: 1; transform: translateX(0); } }
-    @keyframes toastOut { from { opacity: 1; } to { opacity: 0; transform: translateY(-10px); } }
+    .toast {
+      padding: 0.65rem 1.1rem; border-radius: 10px; font-size: 0.78rem;
+      font-family: inherit; font-weight: 500;
+      animation: toastIn 0.35s ease, toastOut 0.35s ease 2.7s forwards;
+      max-width: 380px; box-shadow: var(--shadow);
+      backdrop-filter: blur(8px);
+    }
+    .toast.success { background: #3fb950cc; border: 1px solid #3fb950; color: #fff; }
+    .toast.info { background: #58a6ffcc; border: 1px solid #58a6ff; color: #fff; }
+    .toast.warning { background: #d29922cc; border: 1px solid #d29922; color: #fff; }
+    .toast.error { background: #f85149cc; border: 1px solid #f85149; color: #fff; }
+    @keyframes toastIn { from { opacity: 0; transform: translateX(80px) scale(0.95); } to { opacity: 1; transform: translateX(0) scale(1); } }
+    @keyframes toastOut { from { opacity: 1; } to { opacity: 0; transform: translateY(-10px) scale(0.95); } }
+
+    /* Footer */
+    .footer {
+      margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border);
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 0.65rem; color: var(--muted-dim);
+    }
+    .footer a { color: var(--muted); text-decoration: none; transition: color 0.2s; }
+    .footer a:hover { color: var(--blue); }
 
     /* Responsive */
     @media (max-width: 900px) {
+      .container { padding: 1rem; }
       .grid-top { grid-template-columns: repeat(2, 1fr); }
       .grid-main, .grid-bottom { grid-template-columns: 1fr; }
+      header { gap: 0.5rem; }
+      .controls { width: 100%; justify-content: flex-start; }
     }
     @media (max-width: 500px) {
       .grid-top { grid-template-columns: 1fr; }
-      .log-entry { grid-template-columns: 1fr; }
+      .log-entry { grid-template-columns: 1fr; gap: 0.2rem; }
+      .controls button { padding: 0.35rem 0.6rem; font-size: 0.7rem; }
+      .card .value { font-size: 1.4rem; }
     }
   </style>
 </head>
@@ -135,10 +333,12 @@
     <!-- Header -->
     <header>
       <div class="left">
+        <img src="/logo.png" alt="Tsentry" class="logo-img">
         <h1>Tsentry</h1>
+        <div class="header-sep"></div>
         <span class="badge idle" id="statusBadge">loading</span>
-        <span class="badge" id="wdkBadge" style="display:none;background:#2ecc7122;color:#2ecc71;border:1px solid #2ecc7144">WDK</span>
-        <span style="font-size:0.75rem;color:var(--muted)" id="walletAddr"></span>
+        <span class="badge" id="wdkBadge" style="display:none;background:#3fb95012;color:var(--green);border:1px solid #3fb95033;font-size:0.6rem">WDK</span>
+        <span style="font-size:0.72rem;color:var(--muted-dim);letter-spacing:0.02em" id="walletAddr"></span>
       </div>
       <div class="controls">
         <button onclick="doRefresh()">Refresh</button>
@@ -151,22 +351,22 @@
 
     <!-- Top KPIs -->
     <div class="grid-top">
-      <div class="card">
+      <div class="card kpi-portfolio">
         <h3>Total Portfolio</h3>
         <div class="value" id="totalValue">$0.00</div>
         <div class="sub" id="totalSub">—</div>
       </div>
-      <div class="card">
+      <div class="card kpi-wallet">
         <h3>Wallet Balance</h3>
         <div class="value sm" id="walletValue">$0.00</div>
         <div class="sub" id="walletSub">—</div>
       </div>
-      <div class="card">
+      <div class="card kpi-supplied">
         <h3>Aave Supplied</h3>
         <div class="value sm" id="suppliedValue">$0.00</div>
         <div class="sub" id="suppliedSub">—</div>
       </div>
-      <div class="card">
+      <div class="card kpi-health">
         <h3>Health Factor</h3>
         <div class="value sm" id="healthFactor">—</div>
         <div class="sub" id="healthSub">No borrows</div>
@@ -213,17 +413,17 @@
       <div class="card">
         <h3>Swap</h3>
         <div class="quick-form" style="flex-direction:column;gap:0.75rem">
-          <div style="display:flex;gap:0.5rem;align-items:center">
+          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
             <select id="swapIn"><option>USDT</option><option>DAI</option><option>USDC</option><option>WETH</option></select>
-            <span style="color:var(--muted)">→</span>
+            <span style="color:var(--muted-dim);font-size:0.9rem">→</span>
             <select id="swapOut"><option>USDC</option><option>USDT</option><option>DAI</option><option>WETH</option></select>
             <input type="number" id="swapAmt" placeholder="Amount" style="width:120px">
             <button onclick="doQuote()">Quote</button>
-            <button class="primary" onclick="doSwap()" style="border-color:var(--purple);color:var(--purple)">Swap</button>
+            <button onclick="doSwap()" style="border-color:#bc8cff66;color:var(--purple);background:var(--purple-bg)">Swap</button>
           </div>
           <div id="swapQuote" style="font-size:0.8rem;color:var(--muted)">Enter amount and click Quote</div>
         </div>
-        <div style="margin-top:0.75rem">
+        <div style="margin-top:1rem">
           <h3>Available Pairs</h3>
           <div id="swapPairs" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-top:0.3rem"></div>
         </div>
@@ -248,7 +448,7 @@
               <option value="berachain">Berachain</option>
               <option value="ink">Ink</option>
             </select>
-            <span style="color:var(--muted)">→</span>
+            <span style="color:var(--muted-dim);font-size:0.9rem">→</span>
             <select id="bridgeDst">
               <option value="arbitrum">Arbitrum</option>
               <option value="ethereum">Ethereum</option>
@@ -257,11 +457,11 @@
             </select>
             <input type="number" id="bridgeAmt" placeholder="USDT0 Amount" style="width:130px">
             <button onclick="doBridgeQuote()">Quote</button>
-            <button class="primary" onclick="doBridge()" style="border-color:var(--green);color:var(--green)">Bridge</button>
+            <button onclick="doBridge()" style="border-color:#3fb95066;color:var(--green);background:var(--green-bg)">Bridge</button>
           </div>
           <div id="bridgeQuote" style="font-size:0.8rem;color:var(--muted)">Select route and amount, then Quote</div>
         </div>
-        <div style="margin-top:0.75rem">
+        <div style="margin-top:1rem">
           <h3>Supported Chains</h3>
           <div id="bridgeChains" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-top:0.3rem"></div>
         </div>
@@ -271,22 +471,22 @@
         <div id="bridgeRoutes" style="font-size:0.8rem;color:var(--muted)">
           Click "Quote All" to compare fees across routes.
         </div>
-        <button onclick="doBridgeQuoteAll()" style="margin-top:0.5rem;padding:0.3rem 0.6rem;border-radius:5px;border:1px solid var(--border);background:var(--card);color:var(--text);cursor:pointer;font-family:inherit;font-size:0.75rem">Quote All Routes</button>
+        <button onclick="doBridgeQuoteAll()" style="margin-top:0.75rem;padding:0.4rem 0.8rem;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);cursor:pointer;font-family:inherit;font-size:0.75rem;font-weight:500;transition:all 0.2s">Quote All Routes</button>
       </div>
     </div>
 
     <!-- LLM Reasoning -->
-    <div class="grid-main" style="margin-bottom:1rem">
+    <div class="grid-main" style="margin-bottom:1.25rem">
       <div class="card llm-panel" style="grid-column: span 2">
         <div class="llm-header">
           <div class="llm-status">
             <div class="llm-dot off" id="llmDot"></div>
             <h3 style="margin:0">AI Reasoning Engine</h3>
-            <span style="font-size:0.65rem;color:var(--muted)" id="llmModel">—</span>
+            <span style="font-size:0.62rem;color:var(--muted-dim);letter-spacing:0.03em" id="llmModel">—</span>
           </div>
-          <div style="display:flex;gap:0.5rem;align-items:center">
-            <span style="font-size:0.65rem;color:var(--muted)" id="llmLatency"></span>
-            <button onclick="toggleLlm()" id="btnLlm" style="padding:0.3rem 0.6rem;border-radius:5px;border:1px solid var(--border);background:var(--card);color:var(--text);cursor:pointer;font-family:inherit;font-size:0.7rem">Enable</button>
+          <div style="display:flex;gap:0.6rem;align-items:center">
+            <span style="font-size:0.62rem;color:var(--muted-dim)" id="llmLatency"></span>
+            <button onclick="toggleLlm()" id="btnLlm" style="padding:0.35rem 0.75rem;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--muted);cursor:pointer;font-family:inherit;font-size:0.7rem;font-weight:500;transition:all 0.2s">Enable</button>
           </div>
         </div>
         <div id="llmContent">
@@ -310,15 +510,21 @@
       <div class="card">
         <h3>Live Prices</h3>
         <div id="priceList"></div>
-        <div style="margin-top:1rem">
+        <div style="margin-top:1.25rem">
           <h3>Agent Info</h3>
-          <div style="font-size:0.75rem;color:var(--muted)">
-            <div>Cycle: <span id="cycleCount">0</span></div>
-            <div>Uptime: <span id="uptime">—</span></div>
-            <div>ETH Gas: <span id="ethBal">—</span></div>
+          <div style="font-size:0.75rem;color:var(--muted);display:flex;flex-direction:column;gap:0.35rem;margin-top:0.25rem">
+            <div style="display:flex;justify-content:space-between"><span>Cycle</span><span style="color:var(--text)" id="cycleCount">0</span></div>
+            <div style="display:flex;justify-content:space-between"><span>Uptime</span><span style="color:var(--text)" id="uptime">—</span></div>
+            <div style="display:flex;justify-content:space-between"><span>ETH Gas</span><span style="color:var(--text)" id="ethBal">—</span></div>
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <span>Tsentry v1.0 — Autonomous Treasury Agent</span>
+      <span>Powered by Tether WDK + Aave V3 + LayerZero</span>
     </div>
   </div>
 
@@ -450,10 +656,11 @@
           .map(([sym, p]) => {
             const ch = p.change24h || 0;
             const color = ch >= 0 ? 'var(--green)' : 'var(--red)';
-            return `<div style="display:flex;justify-content:space-between;padding:0.3rem 0;font-size:0.8rem;border-bottom:1px solid #ffffff06">
-              <span>${sym}</span>
-              <span>$${p.usd?.toLocaleString() || '?'}</span>
-              <span style="color:${color}">${ch >= 0 ? '+' : ''}${ch.toFixed(1)}%</span>
+            const arrow = ch >= 0 ? '↑' : '↓';
+            return `<div style="display:flex;justify-content:space-between;align-items:center;padding:0.4rem 0;font-size:0.8rem;border-bottom:1px solid #ffffff06">
+              <span style="font-weight:600;color:var(--text-bright)">${sym}</span>
+              <span style="color:var(--muted)">$${p.usd?.toLocaleString() || '?'}</span>
+              <span style="color:${color};font-size:0.72rem;font-weight:500">${arrow} ${Math.abs(ch).toFixed(1)}%</span>
             </div>`;
           }).join('');
         document.getElementById('priceList').innerHTML = priceHtml || '<span style="color:var(--muted);font-size:0.8rem">Loading...</span>';
@@ -683,15 +890,17 @@
 
       if (llm.connected) {
         dot.className = `llm-dot ${llm.enabled ? 'on' : 'off'}`;
-        btn.textContent = llm.enabled ? 'Disable' : 'Enable';
-        btn.style.borderColor = llm.enabled ? 'var(--green)' : 'var(--border)';
-        btn.style.color = llm.enabled ? 'var(--green)' : 'var(--text)';
+        btn.textContent = llm.enabled ? 'Disable AI' : 'Enable AI';
+        btn.style.borderColor = llm.enabled ? '#3fb95066' : 'var(--border)';
+        btn.style.color = llm.enabled ? 'var(--green)' : 'var(--muted)';
+        btn.style.background = llm.enabled ? 'var(--green-bg)' : 'var(--card)';
         modelEl.textContent = llm.model || '';
       } else {
         dot.className = 'llm-dot off';
         btn.textContent = 'Not Connected';
-        btn.style.borderColor = 'var(--red)';
+        btn.style.borderColor = '#f8514944';
         btn.style.color = 'var(--red)';
+        btn.style.background = 'var(--red-bg)';
         modelEl.textContent = 'No API key';
       }
 
@@ -704,7 +913,7 @@
 
       // Direct answer (for user questions)
       if (d.answer) {
-        html += `<div class="llm-reasoning" style="border-left-color:var(--green);background:#50fa7b08;font-size:0.85rem">${escHtml(d.answer)}</div>`;
+        html += `<div class="llm-reasoning" style="border-left-color:var(--green);background:var(--green-bg);font-size:0.85rem">${escHtml(d.answer)}</div>`;
       }
 
       // Reasoning text
