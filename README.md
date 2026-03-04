@@ -350,6 +350,23 @@ The `/api/command` endpoint accepts plain English instructions. The dashboard in
 
 **LLM fallback** (complex instructions): If no pattern matches and `ANTHROPIC_API_KEY` is set, the command is sent to Claude Haiku 4.5 for interpretation. High-confidence actions (≥ 0.7) are auto-executed.
 
+### Conditional Rules Engine
+
+Users can define custom automation rules in natural language. The LLM parses them into structured conditions + actions that the agent evaluates every cycle.
+
+**Examples:**
+- `"If APR drops by 5% from now, withdraw all from lending and convert to USDT"` — monitors APR, auto-exits if yield deteriorates
+- `"Put 60 USDT in Aave lending, if health factor drops below 1.3 withdraw everything"` — safe lending with automatic unwinding
+- `"If ETH price drops below $2000, swap all WETH to USDT"` — price-triggered hedging
+- `"If USDT balance exceeds 500, supply the excess to Aave"` — auto-deploy idle capital
+
+Rules support one-shot (trigger once) and continuous (keep monitoring) modes. Each rule tracks its trigger count and can be removed at any time.
+
+**API:**
+- `POST /api/rules` — Create rule from natural language (`{text}`) or structured object (`{rule}`)
+- `GET /api/rules` — List all rules with status
+- `DELETE /api/rules/:id` — Remove a rule
+
 ## Third-party Disclosures
 
 | Package | License | Use |

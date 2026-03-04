@@ -322,6 +322,12 @@ async function executeAction (action) {
       agent.paused ? agent.resume() : agent.pause()
       return { paused: agent.paused }
     }
+    case 'transfer': {
+      const token = action.token
+      const to = action.to
+      const amount = action.amount === 'max' ? Infinity : parseFloat(action.amount)
+      return agent.wallet.transfer(token, to, amount)
+    }
     case 'refresh': {
       await agent.refresh()
       return { balances: agent.balances }
@@ -330,6 +336,57 @@ async function executeAction (action) {
       throw new Error(`Unknown action: ${type}`)
   }
 }
+
+// ─── API: Conditional Rules ───
+
+app.get('/api/rules', readLimiter, (req, res) => {
+  res.json({ rules: agent.getRules() })
+})
+
+app.post('/api/rules', writeLimiter, async (req, res) => {
+  const { text, rule: directRule } = req.body
+
+  // Option A: Direct structured rule
+  if (directRule) {
+    try {
+      const added = agent.addRule(directRule)
+      return res.json({ ok: true, rule: added, source: 'direct' })
+    } catch (e) {
+      return res.status(400).json({ error: e.message })
+    }
+  }
+
+  // Option B: Natural language → LLM parses into structured rule
+  if (!text || typeof text !== 'string') {
+    return res.status(400).json({ error: 'Provide "text" (natural language) or "rule" (structured)' })
+  }
+  if (text.length > 1000) return res.status(400).json({ error: 'text too long (max 1000 chars)' })
+
+  if (!agent.llm) {
+    return res.status(400).json({ error: 'LLM not connected — cannot parse natural language rules. Provide a structured "rule" object instead.' })
+  }
+
+  try {
+    const snapshot = agent.getSnapshot()
+    const parsed = await agent.llm.parseRule(text, snapshot)
+
+    if (parsed.confidence < 0.5) {
+      return res.json({ ok: false, parsed, error: 'Low confidence — please rephrase or be more specific' })
+    }
+
+    const added = agent.addRule(parsed)
+    agent.log('nlp_rule', `Rule created via NL: "${text}" → "${parsed.description}"`, { id: added.id })
+    return res.json({ ok: true, rule: added, parsed, source: 'llm' })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+app.delete('/api/rules/:id', writeLimiter, (req, res) => {
+  const removed = agent.removeRule(req.params.id)
+  if (!removed) return res.status(404).json({ error: 'Rule not found' })
+  res.json({ ok: true })
+})
 
 app.post('/api/cycle', writeLimiter, async (req, res) => {
   try {

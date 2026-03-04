@@ -292,6 +292,60 @@
     }
     @keyframes cmdFadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 
+    /* Conditional Rules */
+    .rules-panel { border-color: #d2992233; border-top: 2px solid var(--yellow); }
+    .rules-panel:hover { border-color: #d2992255; }
+    .rule-item {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      padding: 0.6rem 0.75rem; border: 1px solid var(--border); border-radius: 8px;
+      margin-bottom: 0.4rem; transition: all 0.2s; font-size: 0.78rem;
+    }
+    .rule-item:hover { border-color: var(--yellow); background: #d2992208; }
+    .rule-item.inactive { opacity: 0.4; }
+    .rule-desc { flex: 1; color: var(--text); line-height: 1.5; }
+    .rule-meta { font-size: 0.62rem; color: var(--muted-dim); margin-top: 0.2rem; }
+    .rule-meta .triggered { color: var(--yellow); font-weight: 600; }
+    .rule-delete {
+      padding: 0.2rem 0.5rem; border-radius: 6px; border: 1px solid #f8514933;
+      background: transparent; color: var(--red); cursor: pointer; font-size: 0.65rem;
+      font-family: inherit; transition: all 0.15s; margin-left: 0.5rem; flex-shrink: 0;
+    }
+    .rule-delete:hover { background: var(--red-bg); border-color: var(--red); }
+    .rule-bar { display: flex; gap: 0.5rem; }
+    .rule-bar input {
+      flex: 1; padding: 0.6rem 0.85rem; border-radius: 10px;
+      border: 1px solid var(--border); background: var(--bg);
+      color: var(--text-bright); font-family: inherit; font-size: 0.8rem;
+      transition: all 0.25s;
+    }
+    .rule-bar input:focus {
+      outline: none; border-color: var(--yellow);
+      box-shadow: 0 0 0 3px #d2992218, 0 0 20px #d2992208;
+    }
+    .rule-bar input::placeholder { color: var(--muted-dim); }
+    .rule-bar button {
+      padding: 0.6rem 1.1rem; border-radius: 10px; border: 1px solid var(--yellow);
+      background: var(--yellow-bg); color: var(--yellow); cursor: pointer;
+      font-family: inherit; font-size: 0.78rem; font-weight: 600;
+      white-space: nowrap; transition: all 0.2s; min-width: 100px;
+    }
+    .rule-bar button:hover {
+      background: #d2992222; box-shadow: 0 2px 12px #d2992220;
+      transform: translateY(-1px);
+    }
+    .rule-bar button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .rule-examples {
+      display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.5rem;
+    }
+    .rule-example {
+      font-size: 0.6rem; padding: 0.18rem 0.5rem; border-radius: 6px;
+      background: #ffffff06; border: 1px solid #ffffff0a; color: var(--muted);
+      cursor: pointer; transition: all 0.15s;
+    }
+    .rule-example:hover {
+      background: var(--yellow-bg); border-color: #d2992233; color: var(--yellow);
+    }
+
     /* Strategy picker */
     .strat-grid { display: flex; flex-direction: column; gap: 0.4rem; }
     .strat-opt {
@@ -716,8 +770,35 @@
           <span class="cmd-hint" onclick="fillCmd('set strategy aggressive')">strategy aggressive</span>
           <span class="cmd-hint" onclick="fillCmd('start')">start agent</span>
           <span class="cmd-hint" onclick="fillCmd('What is my health factor?')">ask AI</span>
+          <span class="cmd-hint" onclick="fillRule('if APR drops by 5% from now, withdraw all and convert to USDT'); document.getElementById('ruleInput').scrollIntoView({behavior:'smooth'})">+ rule</span>
         </div>
         <div id="cmdResult"></div>
+      </div>
+    </div>
+
+    <!-- Conditional Rules -->
+    <div style="margin-bottom:1.25rem">
+      <div class="card rules-panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
+          <div style="display:flex;align-items:center;gap:0.5rem">
+            <span style="font-size:1rem">&#9881;</span>
+            <h3 style="margin:0">Conditional Rules</h3>
+            <span style="font-size:0.6rem;color:var(--muted-dim);letter-spacing:0.03em">AI-Parsed Automation</span>
+          </div>
+          <span style="font-size:0.65rem;color:var(--muted)" id="rulesCount">0 rules</span>
+        </div>
+        <div class="rule-bar">
+          <input type="text" id="ruleInput" placeholder="Describe a rule: &quot;if APR drops by 5%, withdraw all and convert to USDT&quot;">
+          <button onclick="createRule()" id="ruleBtn">Create Rule</button>
+        </div>
+        <div class="rule-examples">
+          <span class="rule-example" onclick="fillRule('if APR drops by 5% from now, withdraw all from lending and convert to USDT')">APR drop guard</span>
+          <span class="rule-example" onclick="fillRule('put 60 USDT in Aave lending, if health factor drops below 1.3 withdraw everything')">safe lending</span>
+          <span class="rule-example" onclick="fillRule('if ETH price drops below $2000, swap all WETH to USDT')">ETH hedge</span>
+          <span class="rule-example" onclick="fillRule('if USDT balance exceeds 500, supply the excess to Aave')">auto-supply</span>
+        </div>
+        <div id="rulesList" style="margin-top:0.75rem"></div>
+        <div id="ruleResult"></div>
       </div>
     </div>
 
@@ -1519,9 +1600,110 @@
       if (e.key === 'Enter') runCommand();
     });
 
+    // ─── Conditional Rules ───
+
+    function fillRule(text) {
+      document.getElementById('ruleInput').value = text;
+      document.getElementById('ruleInput').focus();
+    }
+
+    async function createRule() {
+      const input = document.getElementById('ruleInput');
+      const btn = document.getElementById('ruleBtn');
+      const resultEl = document.getElementById('ruleResult');
+      const text = input.value.trim();
+      if (!text) return;
+
+      btn.disabled = true;
+      btn.textContent = 'Parsing...';
+      resultEl.innerHTML = '<div class="cmd-result thinking">AI is parsing your rule...</div>';
+
+      try {
+        const res = await fetch('/api/rules', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text })
+        });
+        const data = await res.json();
+
+        if (data.ok && data.rule) {
+          resultEl.innerHTML = `<div class="cmd-result success">
+            <div style="font-weight:600;margin-bottom:0.3rem">Rule created: ${escHtml(data.rule.description)}</div>
+            <div style="font-size:0.7rem;color:var(--muted)">
+              Conditions: ${data.rule.conditions.map(c => c.type + (c.token ? ' ' + c.token : '') + (c.value !== undefined ? ' ' + c.value : '')).join(', ')}<br>
+              Actions: ${data.rule.actions.map(a => a.type + (a.token ? ' ' + a.token : '') + (a.amount ? ' ' + a.amount : '')).join(', ')}
+              ${data.rule.oneShot ? '<br><span style="color:var(--yellow)">One-shot (triggers once)</span>' : '<br><span style="color:var(--green)">Continuous monitoring</span>'}
+            </div>
+          </div>`;
+          input.value = '';
+          toast('Rule created', 'success');
+          await refreshRules();
+        } else {
+          resultEl.innerHTML = `<div class="cmd-result error">${escHtml(data.error || 'Failed to create rule')}</div>`;
+          toast('Rule creation failed', 'error');
+        }
+      } catch (e) {
+        resultEl.innerHTML = `<div class="cmd-result error">Error: ${escHtml(e.message)}</div>`;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Create Rule';
+      }
+    }
+
+    async function deleteRule(id) {
+      try {
+        await fetch(`/api/rules/${id}`, { method: 'DELETE' });
+        toast('Rule removed', 'success');
+        await refreshRules();
+      } catch (e) {
+        toast('Failed to remove rule', 'error');
+      }
+    }
+
+    async function refreshRules() {
+      try {
+        const res = await fetch('/api/rules');
+        const data = await res.json();
+        const list = document.getElementById('rulesList');
+        const count = document.getElementById('rulesCount');
+        const rules = data.rules || [];
+
+        count.textContent = `${rules.length} rule${rules.length !== 1 ? 's' : ''}`;
+
+        if (rules.length === 0) {
+          list.innerHTML = '<div style="font-size:0.75rem;color:var(--muted-dim);padding:0.3rem 0">No rules defined. Create one above using natural language.</div>';
+          return;
+        }
+
+        list.innerHTML = rules.map(r => `
+          <div class="rule-item ${r.active ? '' : 'inactive'}">
+            <div>
+              <div class="rule-desc">${escHtml(r.description)}</div>
+              <div class="rule-meta">
+                ${r.conditions.map(c => `<span style="color:var(--blue)">${c.type}</span>`).join(' + ')}
+                → ${r.actions.map(a => `<span style="color:var(--green)">${a.type}</span>`).join(' + ')}
+                ${r.triggeredCount > 0 ? `&nbsp;·&nbsp;<span class="triggered">triggered ${r.triggeredCount}x</span>` : ''}
+                ${r.oneShot ? '&nbsp;·&nbsp;one-shot' : '&nbsp;·&nbsp;continuous'}
+                ${!r.active ? '&nbsp;·&nbsp;<span style="color:var(--red)">inactive</span>' : ''}
+              </div>
+            </div>
+            <button class="rule-delete" onclick="deleteRule('${r.id}')">Remove</button>
+          </div>
+        `).join('');
+      } catch (e) {
+        // silent
+      }
+    }
+
+    document.getElementById('ruleInput').addEventListener('keydown', e => {
+      if (e.key === 'Enter') createRule();
+    });
+
     // Init
     refresh();
+    refreshRules();
     setInterval(refresh, 8000);
+    setInterval(refreshRules, 15000);
   </script>
 </body>
 </html>

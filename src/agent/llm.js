@@ -315,6 +315,86 @@ export class LlmReasoning {
     }
   }
 
+  /**
+   * Parse a natural language rule into structured conditions + actions
+   * @param {string} text — e.g. "put 60% in highest APR protocol, if APR drops 5% withdraw all and send USDT to 0x..."
+   * @param {object} snapshot — current agent state for context
+   * @returns {object} { description, conditions, actions, oneShot }
+   */
+  async parseRule (text, snapshot = {}) {
+    const prompt = `You are a DeFi rule parser. Convert the user's natural language instruction into a structured conditional rule for an autonomous treasury agent.
+
+Current agent state:
+- Wallet balances: ${JSON.stringify(snapshot.balances || {})}
+- Aave supplied: ${JSON.stringify(snapshot.supplied || {})}
+- Strategy: ${snapshot.strategy?.name || 'none'}
+- Lending %: ${snapshot.lendingPct || '0'}%
+
+Available condition types:
+- apr_below: { type: "apr_below", value: <number> } — Aave APY falls below X%
+- apr_drop_pct: { type: "apr_drop_pct", value: <number> } — APR dropped by X% relative to when rule was created
+- balance_below: { type: "balance_below", token: "SYMBOL", value: <number> }
+- balance_above: { type: "balance_above", token: "SYMBOL", value: <number> }
+- price_below: { type: "price_below", token: "SYMBOL", value: <number> }
+- price_above: { type: "price_above", token: "SYMBOL", value: <number> }
+- price_drop_pct: { type: "price_drop_pct", token: "SYMBOL", value: <number> }
+- health_factor_below: { type: "health_factor_below", value: <number> }
+- lending_pct_above: { type: "lending_pct_above", value: <number> }
+- lending_pct_below: { type: "lending_pct_below", value: <number> }
+
+Available action types:
+- lending_supply: { type: "lending_supply", token: "SYMBOL", amount: <number|"max"> }
+- lending_withdraw: { type: "lending_withdraw", token: "SYMBOL", amount: <number|"max"> }
+- swap: { type: "swap", tokenIn: "SYMBOL", tokenOut: "SYMBOL", amount: <number|"max"> }
+- bridge: { type: "bridge", targetChain: "chain_name", amount: <number> }
+- transfer: { type: "transfer", token: "SYMBOL", to: "0xADDRESS", amount: <number|"max"> }
+- alert: { type: "alert", level: "warning|critical", reason: "message" }
+
+Respond with JSON only:
+{
+  "description": "Short human-readable summary of the rule",
+  "conditions": [ ... ],
+  "actions": [ ... ],
+  "oneShot": true/false,
+  "confidence": 0.0-1.0
+}
+
+Rules:
+- If the user says "if X then Y", X becomes conditions and Y becomes actions
+- "withdraw all" = amount: "max"
+- "send to address" = transfer action
+- For allocation instructions like "put 60% of 100 USDT in lending", calculate the amount (60)
+- oneShot=true if it's a one-time action, false if it should keep monitoring
+- If the instruction implies ongoing monitoring (e.g. "if APR drops"), set oneShot=false
+- Tokens: ETH, WETH, USDT, USDC, DAI, USDT0`
+
+    const response = await this.client.messages.create({
+      model: this.model,
+      max_tokens: 1024,
+      messages: [
+        { role: 'user', content: `${prompt}\n\nUser instruction: "${text}"\n\nRespond with JSON only.` }
+      ]
+    })
+
+    const raw = response.content[0]?.text || ''
+    const jsonStr = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+
+    let parsed
+    try {
+      parsed = JSON.parse(jsonStr)
+    } catch {
+      const match = raw.match(/\{[\s\S]*\}/)
+      if (match) parsed = JSON.parse(match[0])
+      else throw new Error(`Failed to parse rule: ${raw.slice(0, 200)}`)
+    }
+
+    if (!parsed.conditions || !parsed.actions) {
+      throw new Error('Rule must have conditions and actions')
+    }
+
+    return parsed
+  }
+
   /** Reset conversation history */
   resetHistory () {
     this.history = []

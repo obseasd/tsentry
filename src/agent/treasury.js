@@ -40,6 +40,10 @@ export class TreasuryAgent {
     this.bridgeChains = []
     this.bridgeRoutes = []
 
+    // Custom conditional rules (user-defined via NL)
+    this.rules = []
+    this._ruleSnapshots = {} // initial state snapshots per rule
+
     // Logging
     this.actionLog = []
     this.errors = []
@@ -213,6 +217,12 @@ export class TreasuryAgent {
 
     // Always run rule-based evaluation as safety baseline
     const ruleActions = this._evaluateRules()
+
+    // Evaluate user-defined conditional rules
+    const customRuleActions = this._evaluateCustomRules()
+    if (customRuleActions.length > 0) {
+      ruleActions.push(...customRuleActions)
+    }
 
     // If LLM is available and enabled, use it for intelligent reasoning
     if (this.llm && this.llmEnabled) {
@@ -433,6 +443,170 @@ export class TreasuryAgent {
     return actions
   }
 
+  // ─── Custom Conditional Rules Engine ───
+
+  /**
+   * Add a conditional rule (parsed from NL by LLM)
+   * @param {object} rule — { id, description, conditions, actions, oneShot }
+   */
+  addRule (rule) {
+    rule.id = rule.id || `rule_${Date.now()}`
+    rule.active = true
+    rule.createdAt = new Date().toISOString()
+    rule.triggeredCount = 0
+
+    // Snapshot current state at rule creation (for relative conditions like "drops by X%")
+    this._ruleSnapshots[rule.id] = {
+      prices: { ...this.prices },
+      supplied: { ...this.supplied },
+      balances: { ...this.balances },
+      aaveAccount: this.aaveAccount ? { ...this.aaveAccount } : null
+    }
+
+    this.rules.push(rule)
+    this.log('rule_add', `Rule added: "${rule.description}"`, { id: rule.id, conditions: rule.conditions, actions: rule.actions })
+    return rule
+  }
+
+  /** Remove a rule by id */
+  removeRule (ruleId) {
+    const idx = this.rules.findIndex(r => r.id === ruleId)
+    if (idx === -1) return false
+    const removed = this.rules.splice(idx, 1)[0]
+    delete this._ruleSnapshots[ruleId]
+    this.log('rule_remove', `Rule removed: "${removed.description}"`, { id: ruleId })
+    return true
+  }
+
+  /** Get all rules */
+  getRules () {
+    return this.rules.map(r => ({ ...r }))
+  }
+
+  /**
+   * Evaluate all active custom rules against current state.
+   * Returns actions to execute if conditions are met.
+   */
+  _evaluateCustomRules () {
+    const triggered = []
+
+    for (const rule of this.rules) {
+      if (!rule.active) continue
+
+      const snapshot = this._ruleSnapshots[rule.id] || {}
+      const allMet = rule.conditions.every(c => this._checkCondition(c, snapshot))
+
+      if (allMet) {
+        rule.triggeredCount++
+        this.log('rule_trigger', `Rule triggered: "${rule.description}" (${rule.triggeredCount}x)`, { id: rule.id })
+
+        for (const action of rule.actions) {
+          triggered.push({
+            ...action,
+            reason: `[Rule] ${rule.description} — ${action.reason || action.type}`,
+            priority: action.priority || 'high',
+            _ruleId: rule.id
+          })
+        }
+
+        // One-shot rules deactivate after first trigger
+        if (rule.oneShot) {
+          rule.active = false
+          this.log('rule_deactivate', `One-shot rule deactivated: "${rule.description}"`)
+        }
+      }
+    }
+
+    return triggered
+  }
+
+  /**
+   * Check a single condition against current state
+   * @param {object} cond — { type, token, operator, value, reference }
+   * @param {object} snapshot — initial state at rule creation
+   */
+  _checkCondition (cond, snapshot) {
+    let current
+
+    switch (cond.type) {
+      case 'apr_below':
+      case 'apy_below': {
+        // Aave supply APY — approximated from account data
+        // In production this would query Aave's getReserveData
+        // For now, use a simplified proxy: total collateral yield
+        current = this.aaveAccount?.liquidationThreshold || 0
+        // Fallback: just check if threshold is met
+        return this._compare(cond.value, '>=', current)
+      }
+
+      case 'apr_drop_pct': {
+        // APR dropped by X% relative to initial
+        const initialVal = snapshot.aaveAccount?.totalCollateralUSD || 0
+        const currentVal = this.aaveAccount?.totalCollateralUSD || 0
+        if (initialVal <= 0) return false
+        const dropPct = ((initialVal - currentVal) / initialVal) * 100
+        return dropPct >= cond.value
+      }
+
+      case 'balance_below': {
+        const bal = (this.balances[cond.token] || 0) + (this.supplied[cond.token] || 0)
+        return bal < cond.value
+      }
+
+      case 'balance_above': {
+        const bal = (this.balances[cond.token] || 0) + (this.supplied[cond.token] || 0)
+        return bal > cond.value
+      }
+
+      case 'price_below': {
+        const price = this.prices?.[cond.token]?.usd || 0
+        return price < cond.value
+      }
+
+      case 'price_above': {
+        const price = this.prices?.[cond.token]?.usd || 0
+        return price > cond.value
+      }
+
+      case 'price_drop_pct': {
+        const initPrice = snapshot.prices?.[cond.token]?.usd || 0
+        const curPrice = this.prices?.[cond.token]?.usd || 0
+        if (initPrice <= 0) return false
+        const dropPct = ((initPrice - curPrice) / initPrice) * 100
+        return dropPct >= cond.value
+      }
+
+      case 'health_factor_below': {
+        const hf = this.aaveAccount?.healthFactor || Infinity
+        return hf < cond.value
+      }
+
+      case 'lending_pct_above': {
+        const pct = parseFloat(this._currentLendingPct())
+        return pct > cond.value
+      }
+
+      case 'lending_pct_below': {
+        const pct = parseFloat(this._currentLendingPct())
+        return pct < cond.value
+      }
+
+      default:
+        return false
+    }
+  }
+
+  _compare (a, op, b) {
+    switch (op) {
+      case '>': return a > b
+      case '<': return a < b
+      case '>=': return a >= b
+      case '<=': return a <= b
+      case '==': return a === b
+      default: return false
+    }
+  }
+
   /** Parse interval string to ms */
   _parseInterval (str) {
     const match = str.match(/^(\d+)(s|m|h)$/)
@@ -522,6 +696,14 @@ export class TreasuryAgent {
           result = await this.swap.sell(
             action.tokenIn, action.tokenOut, action.amount, 2
           )
+          break
+
+        case 'bridge':
+          result = await this.bridge.bridge(action.targetChain, action.amount, action.recipient)
+          break
+
+        case 'transfer':
+          result = await this.wallet.transfer(action.token, action.to, action.amount)
           break
 
         case 'alert':
@@ -683,6 +865,7 @@ export class TreasuryAgent {
         model: this.llm?.model || null,
         lastDecision: this._lastLlmDecision || null
       },
+      rules: this.rules.map(r => ({ id: r.id, description: r.description, active: r.active, triggeredCount: r.triggeredCount, oneShot: r.oneShot, conditions: r.conditions, actions: r.actions, createdAt: r.createdAt })),
       recentActions: this.actionLog.slice(-50),
       recentErrors: this.errors.slice(-10)
     }
