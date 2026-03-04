@@ -3,9 +3,15 @@
 
 import 'dotenv/config'
 import express from 'express'
+import rateLimit from 'express-rate-limit'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { TreasuryAgent } from './agent/treasury.js'
+import { createX402Middleware, getX402Info } from './x402/server.js'
+import { RevenueTracker, revenueMiddleware } from './x402/revenue.js'
+import { USDT0_ADDRESSES } from '@t402/wdk'
+import { createIndexer } from './evm/indexer.js'
+import { validateToken, validateAmount, validateAddress, validateChain, VALID_STRATEGIES } from './validation.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
@@ -13,6 +19,14 @@ const PORT = process.env.PORT || 3000
 
 // ─── Agent Singleton ───
 const agent = new TreasuryAgent()
+let x402State = null
+const revenue = new RevenueTracker()
+const indexer = createIndexer()
+
+// ─── Rate Limiters ───
+const readLimiter = rateLimit({ windowMs: 60_000, max: 120, standardHeaders: true, legacyHeaders: false })
+const writeLimiter = rateLimit({ windowMs: 60_000, max: 30, standardHeaders: true, legacyHeaders: false })
+const txLimiter = rateLimit({ windowMs: 60_000, max: 10, standardHeaders: true, legacyHeaders: false })
 
 // ─── Middleware ───
 app.use(express.static(path.join(__dirname, '..', 'web', 'public')))
@@ -27,7 +41,7 @@ app.get('/', (req, res) => {
 
 // ─── API: Read ───
 
-app.get('/api/status', (req, res) => {
+app.get('/api/status', readLimiter, (req, res) => {
   const snap = agent.getSnapshot()
   res.json({
     name: 'Tsentry',
@@ -39,12 +53,13 @@ app.get('/api/status', (req, res) => {
     paused: snap.paused,
     cycle: snap.cycle,
     strategy: snap.strategy?.name || 'none',
+    swapProvider: snap.swapProvider || 'uniswap',
     lendingPct: snap.lendingPct,
     uptime: process.uptime()
   })
 })
 
-app.get('/api/portfolio', (req, res) => {
+app.get('/api/portfolio', readLimiter, (req, res) => {
   const snap = agent.getSnapshot()
   res.json({
     balances: snap.balances,
@@ -56,7 +71,7 @@ app.get('/api/portfolio', (req, res) => {
   })
 })
 
-app.get('/api/actions', (req, res) => {
+app.get('/api/actions', readLimiter, (req, res) => {
   const snap = agent.getSnapshot()
   const limit = parseInt(req.query.limit) || 50
   res.json({
@@ -65,15 +80,18 @@ app.get('/api/actions', (req, res) => {
   })
 })
 
-app.get('/api/snapshot', (req, res) => {
+app.get('/api/snapshot', readLimiter, (req, res) => {
   res.json(agent.getSnapshot())
 })
 
 // ─── API: Control ───
 
-app.post('/api/strategy', (req, res) => {
+app.post('/api/strategy', writeLimiter, (req, res) => {
   try {
     const { name, config } = req.body
+    if (name && typeof name === 'string' && !VALID_STRATEGIES.includes(name.toUpperCase())) {
+      return res.status(400).json({ error: `invalid strategy: ${name}. Valid: ${VALID_STRATEGIES.join(', ')}` })
+    }
     agent.setStrategy(name || config)
     res.json({ ok: true, strategy: agent.strategy })
   } catch (e) {
@@ -81,41 +99,46 @@ app.post('/api/strategy', (req, res) => {
   }
 })
 
-app.post('/api/start', (req, res) => {
-  const interval = req.body.intervalMs || 60_000
+app.post('/api/start', writeLimiter, (req, res) => {
+  const interval = Number(req.body.intervalMs) || 60_000
+  if (interval < 10_000 || interval > 3_600_000) {
+    return res.status(400).json({ error: 'intervalMs must be between 10000 and 3600000' })
+  }
   agent.start(interval)
   res.json({ ok: true, active: true, intervalMs: interval })
 })
 
-app.post('/api/stop', (req, res) => {
+app.post('/api/stop', writeLimiter, (req, res) => {
   agent.stop()
   res.json({ ok: true, active: false })
 })
 
-app.post('/api/pause', (req, res) => {
+app.post('/api/pause', writeLimiter, (req, res) => {
   agent.paused ? agent.resume() : agent.pause()
   res.json({ ok: true, paused: agent.paused })
 })
 
 // ─── API: LLM Control ───
 
-app.get('/api/llm', (req, res) => {
+app.get('/api/llm', readLimiter, (req, res) => {
   const snap = agent.getSnapshot()
   res.json(snap.llm)
 })
 
-app.post('/api/llm/toggle', (req, res) => {
+app.post('/api/llm/toggle', writeLimiter, (req, res) => {
   agent.llmEnabled = !agent.llmEnabled
   res.json({ ok: true, llmEnabled: agent.llmEnabled, connected: !!agent.llm })
 })
 
-app.post('/api/llm/reason', async (req, res) => {
+app.post('/api/llm/reason', writeLimiter, async (req, res) => {
   try {
     if (!agent.llm) return res.status(400).json({ error: 'LLM not connected' })
+    const instruction = req.body.instruction
+    if (instruction && (typeof instruction !== 'string' || instruction.length > 2000)) {
+      return res.status(400).json({ error: 'instruction must be a string (max 2000 chars)' })
+    }
     const snapshot = agent.getSnapshot()
-    const decision = await agent.llm.reason(snapshot, {
-      userInstruction: req.body.instruction
-    })
+    const decision = await agent.llm.reason(snapshot, { userInstruction: instruction })
     agent._lastLlmDecision = decision
     res.json({ ok: true, decision })
   } catch (e) {
@@ -123,7 +146,170 @@ app.post('/api/llm/reason', async (req, res) => {
   }
 })
 
-app.post('/api/cycle', async (req, res) => {
+// ─── API: Natural Language Command ───
+
+app.post('/api/command', txLimiter, async (req, res) => {
+  const text = (req.body.text || '').trim()
+  if (!text || typeof text !== 'string') return res.status(400).json({ error: 'text is required' })
+  if (text.length > 500) return res.status(400).json({ error: 'text too long (max 500 chars)' })
+
+  // Step 1: Parse the command via LLM (or pattern matching)
+  const parsed = parseCommand(text)
+
+  // Step 2: If pattern matched, execute directly. Otherwise use LLM.
+  if (parsed) {
+    try {
+      const result = await executeAction(parsed)
+      agent.log('nlp_command', `"${text}" → ${parsed.action} ${parsed.token || ''} ${parsed.amount || ''}`, result)
+      return res.json({ ok: true, parsed, result, source: 'pattern' })
+    } catch (e) {
+      return res.status(500).json({ ok: false, parsed, error: e.message })
+    }
+  }
+
+  // Step 3: LLM parsing for complex commands
+  if (!agent.llm) {
+    return res.status(400).json({ error: 'Command not recognized and LLM not connected. Try: "supply 50 USDT", "swap 100 USDT to WETH", "withdraw all DAI"' })
+  }
+
+  try {
+    const snapshot = agent.getSnapshot()
+    const decision = await agent.llm.reason(snapshot, {
+      userInstruction: `The user typed this natural language command: "${text}". Parse their intent and respond with the appropriate action. If they want to execute something, include it as a high-confidence action. If they're asking a question, use the answer field.`
+    })
+    agent._lastLlmDecision = decision
+
+    // Auto-execute high-confidence actions from LLM
+    const executed = []
+    for (const action of (decision.actions || []).filter(a => a.confidence >= 0.7)) {
+      try {
+        const result = await executeAction(action)
+        agent.log('nlp_command', `"${text}" → ${action.type} ${action.token || ''} ${action.amount || ''}`, result)
+        executed.push({ action, result })
+      } catch (e) {
+        executed.push({ action, error: e.message })
+      }
+    }
+
+    await agent.refresh()
+    return res.json({ ok: true, decision, executed, source: 'llm' })
+  } catch (e) {
+    return res.status(500).json({ error: e.message })
+  }
+})
+
+/**
+ * Pattern-match common natural language commands (no LLM needed)
+ */
+function parseCommand (text) {
+  const t = text.toLowerCase().trim()
+  const tokens = ['ETH', 'WETH', 'USDT', 'USDC', 'DAI', 'USDT0', 'USDC.e']
+  const findToken = s => tokens.find(tk => s.includes(tk.toLowerCase())) || null
+  const findAmount = s => {
+    if (/\ball\b/.test(s)) return 'max'
+    const m = s.match(/(\d+(?:\.\d+)?)/)
+    return m ? parseFloat(m[1]) : null
+  }
+
+  // supply/deposit X TOKEN
+  if (/^(supply|deposit|lend)\s/.test(t)) {
+    const amount = findAmount(t)
+    const token = findToken(t)
+    if (amount && token) return { action: 'supply', token, amount }
+  }
+
+  // withdraw X TOKEN
+  if (/^(withdraw|remove)\s/.test(t)) {
+    const amount = findAmount(t)
+    const token = findToken(t)
+    if (amount && token) return { action: 'withdraw', token, amount }
+  }
+
+  // swap X TOKEN to/for TOKEN
+  if (/^(swap|convert|exchange|trade)\s/.test(t)) {
+    const amount = findAmount(t)
+    const parts = t.split(/\s+(?:to|for|into|->|→)\s+/)
+    const tokenIn = findToken(parts[0])
+    const tokenOut = parts[1] ? findToken(parts[1]) : null
+    if (amount && tokenIn && tokenOut) return { action: 'swap', tokenIn, tokenOut, amount }
+  }
+
+  // bridge X to CHAIN
+  if (/^(bridge|send|transfer)\s/.test(t) && /\b(arbitrum|ethereum|base|berachain|ink)\b/.test(t)) {
+    const amount = findAmount(t)
+    const chainMatch = t.match(/\b(arbitrum|ethereum|base|berachain|ink)\b/)
+    if (amount && chainMatch) return { action: 'bridge', targetChain: chainMatch[1], amount }
+  }
+
+  // strategy commands
+  if (/^(set\s+)?strategy\s/.test(t) || /^(use|switch\s+to)\s/.test(t)) {
+    const strategies = { conservative: 'CONSERVATIVE', balanced: 'BALANCED', aggressive: 'AGGRESSIVE', 'usdt yield': 'USDT_YIELD', 'tether diversified': 'TETHER_DIVERSIFIED' }
+    for (const [key, val] of Object.entries(strategies)) {
+      if (t.includes(key)) return { action: 'strategy', name: val }
+    }
+  }
+
+  // start/stop/pause
+  if (/^start\b/.test(t)) return { action: 'start' }
+  if (/^stop\b/.test(t)) return { action: 'stop' }
+  if (/^pause\b/.test(t)) return { action: 'pause' }
+  if (/^refresh\b/.test(t)) return { action: 'refresh' }
+
+  return null // not recognized — fall through to LLM
+}
+
+/**
+ * Execute a parsed action
+ */
+async function executeAction (action) {
+  const type = action.action || action.type
+  switch (type) {
+    case 'supply':
+    case 'lending_supply': {
+      const token = action.token
+      const amount = action.amount === 'max' ? Infinity : parseFloat(action.amount)
+      return agent.aave.supply(token, amount)
+    }
+    case 'withdraw':
+    case 'lending_withdraw': {
+      const token = action.token
+      const amount = action.amount === 'max' ? Infinity : parseFloat(action.amount)
+      return agent.aave.withdraw(token, amount)
+    }
+    case 'swap': {
+      const tokenIn = action.tokenIn || action.token
+      const tokenOut = action.tokenOut
+      return agent.swap.sell(tokenIn, tokenOut, parseFloat(action.amount), 2)
+    }
+    case 'bridge': {
+      return agent.bridge.bridge(action.targetChain, parseFloat(action.amount))
+    }
+    case 'strategy': {
+      agent.setStrategy(action.name)
+      return { strategy: agent.strategy }
+    }
+    case 'start': {
+      agent.start(60_000)
+      return { active: true }
+    }
+    case 'stop': {
+      agent.stop()
+      return { active: false }
+    }
+    case 'pause': {
+      agent.paused ? agent.resume() : agent.pause()
+      return { paused: agent.paused }
+    }
+    case 'refresh': {
+      await agent.refresh()
+      return { balances: agent.balances }
+    }
+    default:
+      throw new Error(`Unknown action: ${type}`)
+  }
+}
+
+app.post('/api/cycle', writeLimiter, async (req, res) => {
   try {
     await agent.cycle()
     res.json({ ok: true, snapshot: agent.getSnapshot() })
@@ -132,7 +318,7 @@ app.post('/api/cycle', async (req, res) => {
   }
 })
 
-app.post('/api/refresh', async (req, res) => {
+app.post('/api/refresh', writeLimiter, async (req, res) => {
   try {
     await agent.refresh()
     const snap = agent.getSnapshot()
@@ -149,10 +335,13 @@ app.post('/api/refresh', async (req, res) => {
 
 // ─── API: Direct Actions ───
 
-app.post('/api/supply', async (req, res) => {
+app.post('/api/supply', txLimiter, async (req, res) => {
   try {
     const { token, amount } = req.body
-    if (!token || !amount) return res.status(400).json({ error: 'token and amount required' })
+    let err = validateToken(token)
+    if (err) return res.status(400).json({ error: err })
+    err = validateAmount(amount)
+    if (err) return res.status(400).json({ error: err })
     const result = await agent.aave.supply(token, parseFloat(amount))
     agent.log('manual_supply', `Manual supply ${amount} ${token}`, result)
     await agent.refresh()
@@ -162,10 +351,13 @@ app.post('/api/supply', async (req, res) => {
   }
 })
 
-app.post('/api/withdraw', async (req, res) => {
+app.post('/api/withdraw', txLimiter, async (req, res) => {
   try {
     const { token, amount } = req.body
-    if (!token) return res.status(400).json({ error: 'token required' })
+    let err = validateToken(token)
+    if (err) return res.status(400).json({ error: err })
+    err = validateAmount(amount)
+    if (err) return res.status(400).json({ error: err })
     const amt = amount === 'max' ? Infinity : parseFloat(amount)
     const result = await agent.aave.withdraw(token, amt)
     agent.log('manual_withdraw', `Manual withdraw ${amount} ${token}`, result)
@@ -178,16 +370,20 @@ app.post('/api/withdraw', async (req, res) => {
 
 // ─── API: Swap ───
 
-app.get('/api/swap/pairs', (req, res) => {
+app.get('/api/swap/pairs', readLimiter, (req, res) => {
   res.json({ pairs: agent.swapPairs })
 })
 
-app.post('/api/swap/quote', async (req, res) => {
+app.post('/api/swap/quote', writeLimiter, async (req, res) => {
   try {
     const { tokenIn, tokenOut, amount, side } = req.body
-    if (!tokenIn || !tokenOut || !amount) {
-      return res.status(400).json({ error: 'tokenIn, tokenOut, and amount required' })
-    }
+    let err = validateToken(tokenIn)
+    if (err) return res.status(400).json({ error: `tokenIn: ${err}` })
+    err = validateToken(tokenOut)
+    if (err) return res.status(400).json({ error: `tokenOut: ${err}` })
+    err = validateAmount(amount)
+    if (err) return res.status(400).json({ error: err })
+    if (side && !['buy', 'sell'].includes(side)) return res.status(400).json({ error: 'side must be buy or sell' })
     const quote = await agent.swap.quote(tokenIn, tokenOut, parseFloat(amount), side || 'sell')
     res.json({ ok: true, ...quote })
   } catch (e) {
@@ -195,13 +391,18 @@ app.post('/api/swap/quote', async (req, res) => {
   }
 })
 
-app.post('/api/swap/execute', async (req, res) => {
+app.post('/api/swap/execute', txLimiter, async (req, res) => {
   try {
     const { tokenIn, tokenOut, amount, slippage } = req.body
-    if (!tokenIn || !tokenOut || !amount) {
-      return res.status(400).json({ error: 'tokenIn, tokenOut, and amount required' })
-    }
-    const result = await agent.swap.sell(tokenIn, tokenOut, parseFloat(amount), slippage || 2)
+    let err = validateToken(tokenIn)
+    if (err) return res.status(400).json({ error: `tokenIn: ${err}` })
+    err = validateToken(tokenOut)
+    if (err) return res.status(400).json({ error: `tokenOut: ${err}` })
+    err = validateAmount(amount)
+    if (err) return res.status(400).json({ error: err })
+    const slip = Number(slippage) || 2
+    if (slip < 0.01 || slip > 50) return res.status(400).json({ error: 'slippage must be 0.01-50%' })
+    const result = await agent.swap.sell(tokenIn, tokenOut, parseFloat(amount), slip)
     agent.log('manual_swap', `Manual swap ${amount} ${tokenIn} → ${result.amountOut} ${tokenOut}`, result)
     await agent.refresh()
     res.json({ ok: true, ...result })
@@ -212,16 +413,19 @@ app.post('/api/swap/execute', async (req, res) => {
 
 // ─── API: Bridge ───
 
-app.get('/api/bridge/chains', (req, res) => {
+app.get('/api/bridge/chains', readLimiter, (req, res) => {
   res.json({ chains: agent.bridgeChains, routes: agent.bridgeRoutes })
 })
 
-app.post('/api/bridge/quote', async (req, res) => {
+app.post('/api/bridge/quote', writeLimiter, async (req, res) => {
   try {
     const { sourceChain, targetChain, amount } = req.body
-    if (!sourceChain || !targetChain || !amount) {
-      return res.status(400).json({ error: 'sourceChain, targetChain, and amount required' })
-    }
+    let err = validateChain(sourceChain)
+    if (err) return res.status(400).json({ error: `sourceChain: ${err}` })
+    err = validateChain(targetChain)
+    if (err) return res.status(400).json({ error: `targetChain: ${err}` })
+    err = validateAmount(amount)
+    if (err) return res.status(400).json({ error: err })
     const quote = await agent.bridge.quote(sourceChain, targetChain, parseFloat(amount))
     res.json({ ok: true, ...quote })
   } catch (e) {
@@ -229,12 +433,13 @@ app.post('/api/bridge/quote', async (req, res) => {
   }
 })
 
-app.post('/api/bridge/quote-all', async (req, res) => {
+app.post('/api/bridge/quote-all', writeLimiter, async (req, res) => {
   try {
     const { sourceChain, amount } = req.body
-    if (!sourceChain || !amount) {
-      return res.status(400).json({ error: 'sourceChain and amount required' })
-    }
+    let err = validateChain(sourceChain)
+    if (err) return res.status(400).json({ error: `sourceChain: ${err}` })
+    err = validateAmount(amount)
+    if (err) return res.status(400).json({ error: err })
     const quotes = await agent.bridge.quoteAllRoutes(sourceChain, parseFloat(amount))
     res.json({ ok: true, quotes })
   } catch (e) {
@@ -242,11 +447,16 @@ app.post('/api/bridge/quote-all', async (req, res) => {
   }
 })
 
-app.post('/api/bridge/execute', async (req, res) => {
+app.post('/api/bridge/execute', txLimiter, async (req, res) => {
   try {
     const { targetChain, amount, recipient } = req.body
-    if (!targetChain || !amount) {
-      return res.status(400).json({ error: 'targetChain and amount required' })
+    let err = validateChain(targetChain)
+    if (err) return res.status(400).json({ error: `targetChain: ${err}` })
+    err = validateAmount(amount)
+    if (err) return res.status(400).json({ error: err })
+    if (recipient) {
+      err = validateAddress(recipient)
+      if (err) return res.status(400).json({ error: `recipient: ${err}` })
     }
     const result = await agent.bridge.bridge(targetChain, parseFloat(amount), recipient)
     agent.log('manual_bridge', `Bridge ${amount} USDT0 → ${targetChain}`, result)
@@ -254,6 +464,128 @@ app.post('/api/bridge/execute', async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message })
   }
+})
+
+// ─── API: ERC-4337 Smart Account ───
+
+app.get('/api/erc4337', readLimiter, (req, res) => {
+  const snap = agent.getSnapshot()
+  res.json(snap.erc4337)
+})
+
+app.post('/api/erc4337/quote-transfer', writeLimiter, async (req, res) => {
+  try {
+    if (!agent.erc4337) return res.status(400).json({ error: 'ERC-4337 not configured (set ERC4337_BUNDLER_URL)' })
+    const { token, to, amount } = req.body
+    let err = validateToken(token)
+    if (err) return res.status(400).json({ error: err })
+    err = validateAddress(to)
+    if (err) return res.status(400).json({ error: err })
+    err = validateAmount(amount)
+    if (err) return res.status(400).json({ error: err })
+    const tokenInfo = agent.wallet.tokens[token]
+    if (!tokenInfo) return res.status(400).json({ error: `Unknown token: ${token}` })
+    const { parseUnits } = await import('ethers')
+    const amountWei = parseUnits(amount.toString(), tokenInfo.decimals)
+    const quote = await agent.erc4337.quoteTransfer(tokenInfo.address, to, amountWei)
+    res.json({ ok: true, ...quote })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+app.post('/api/erc4337/transfer', txLimiter, async (req, res) => {
+  try {
+    if (!agent.erc4337) return res.status(400).json({ error: 'ERC-4337 not configured' })
+    const { token, to, amount } = req.body
+    let err = validateToken(token)
+    if (err) return res.status(400).json({ error: err })
+    err = validateAddress(to)
+    if (err) return res.status(400).json({ error: err })
+    err = validateAmount(amount)
+    if (err) return res.status(400).json({ error: err })
+    const tokenInfo = agent.wallet.tokens[token]
+    if (!tokenInfo) return res.status(400).json({ error: `Unknown token: ${token}` })
+    const { parseUnits } = await import('ethers')
+    const amountWei = parseUnits(amount.toString(), tokenInfo.decimals)
+    const result = await agent.erc4337.transfer(tokenInfo.address, to, amountWei)
+    agent.log('erc4337_transfer', `Smart Account transfer ${amount} ${token} → ${to}`, result)
+    res.json({ ok: true, hash: result.hash, fee: result.fee.toString() })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// ─── API: x402 Payment Protocol ───
+
+app.get('/api/x402', readLimiter, (req, res) => {
+  res.json(getX402Info(x402State))
+})
+
+app.get('/api/x402/revenue', readLimiter, (req, res) => {
+  const summary = revenue.getSummary()
+  if (req.query.since) {
+    const since = revenue.getSince(req.query.since)
+    return res.json({ ...summary, filtered: since })
+  }
+  res.json(summary)
+})
+
+// ─── API: Transaction History (WDK Indexer) ───
+
+app.get('/api/history', readLimiter, async (req, res) => {
+  if (!indexer) return res.json({ enabled: false, transfers: [] })
+  try {
+    const address = agent.wallet?.address
+    if (!address) return res.status(400).json({ error: 'Wallet not initialized' })
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 20, 1), 100)
+    const transfers = await indexer.getTransfers(address, {
+      limit,
+      tokenAddress: req.query.token || undefined
+    })
+    res.json({ enabled: true, transfers })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+app.get('/api/indexer', readLimiter, (req, res) => {
+  res.json(indexer ? indexer.getInfo() : { enabled: false })
+})
+
+// ─── API: Agent Skills ───
+
+app.get('/api/skills', readLimiter, (req, res) => {
+  const snap = agent.getSnapshot()
+  res.json({
+    name: 'tsentry',
+    version: '0.1.0',
+    description: 'Autonomous Multi-Chain Treasury Agent powered by Tether WDK',
+    skills: [
+      { id: 'wallet', name: 'Multi-Chain Wallet', module: 'wdk-wallet-evm', status: 'active', capabilities: ['balance', 'transfer', 'sign', 'approve'] },
+      { id: 'erc4337', name: 'Account Abstraction', module: 'wdk-wallet-evm-erc-4337', status: snap.erc4337?.enabled ? 'active' : 'inactive', capabilities: ['gasless_transfer', 'batch_transactions', 'smart_account'] },
+      { id: 'swap', name: 'DEX Aggregator', module: 'wdk-protocol-swap-velora-evm', status: 'active', provider: snap.swapProvider, capabilities: ['quote', 'swap', '160+_dex_aggregation'] },
+      { id: 'lending', name: 'Lending Protocol', module: 'wdk-protocol-lending-aave-evm', status: 'active', capabilities: ['supply', 'withdraw', 'borrow', 'repay', 'emode'] },
+      { id: 'bridge', name: 'Cross-Chain Bridge', module: 'wdk-protocol-bridge-usdt0', status: 'active', capabilities: ['quote', 'bridge', '26+_chains'] },
+      { id: 'mcp', name: 'MCP Toolkit', module: 'wdk-mcp-toolkit', status: 'active', capabilities: ['42_tools', 'ai_agent_interop'] },
+      { id: 'x402', name: 'Agentic Payments', module: 't402-wdk', status: x402State ? 'active' : (snap.x402?.enabled ? 'client_only' : 'inactive'), capabilities: ['http_402', 'micropayments', 'usdt0_payments', 'eip3009'] },
+      { id: 'reasoning', name: 'LLM Reasoning', module: 'anthropic-claude', status: snap.llm?.connected ? 'active' : 'inactive', capabilities: ['market_analysis', 'risk_assessment', 'strategy_optimization'] }
+    ],
+    wdkModules: {
+      total: 8,
+      integrated: 8,
+      list: [
+        'wdk-wallet-evm',
+        'wdk-wallet-evm-erc-4337',
+        'wdk-protocol-swap-velora-evm',
+        'wdk-protocol-lending-aave-evm',
+        'wdk-protocol-bridge-usdt0',
+        'wdk-mcp-toolkit',
+        'wdk-agent-skills',
+        't402-wdk'
+      ]
+    }
+  })
 })
 
 // ─── Boot ───
@@ -267,6 +599,35 @@ async function boot () {
 
     // Default strategy — USDT-centric for Tether hackathon
     agent.setStrategy('USDT_YIELD')
+
+    // x402 payment gate — activated by X402_NETWORK env var
+    // Gates premium endpoints behind USDT0 micropayments via t402 protocol
+    if (process.env.X402_NETWORK) {
+      try {
+        const network = process.env.X402_NETWORK // e.g., "eip155:42161"
+        const chain = network.split(':')[1] // e.g., "42161"
+        const chainName = { 1: 'ethereum', 42161: 'arbitrum', 8453: 'base' }[chain] || 'ethereum'
+        const tokenAddress = process.env.X402_TOKEN || USDT0_ADDRESSES[chainName]
+
+        if (tokenAddress) {
+          x402State = createX402Middleware({
+            network,
+            tokenAddress,
+            facilitatorUrl: process.env.X402_FACILITATOR || 'https://facilitator.t402.io',
+            pricing: process.env.X402_PRICING ? JSON.parse(process.env.X402_PRICING) : undefined
+          })
+          app.use(x402State.middleware)
+          app.use(revenueMiddleware(revenue, x402State.config))
+          console.log(`[tsentry] x402 payment gate active (${network}, token: ${tokenAddress})`)
+          console.log(`[tsentry] x402 gated routes: ${x402State.config.routes.join(', ')}`)
+          console.log(`[tsentry] x402 revenue tracking enabled`)
+        } else {
+          console.log(`[tsentry] x402 skipped — no token address for chain ${chainName}`)
+        }
+      } catch (e) {
+        console.log(`[tsentry] x402 init failed: ${e.message} — continuing without payment gate`)
+      }
+    }
 
     app.listen(PORT, () => {
       console.log(`[tsentry] Dashboard: http://localhost:${PORT}`)

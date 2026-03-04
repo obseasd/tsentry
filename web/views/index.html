@@ -242,6 +242,56 @@
       transform: translateY(-1px);
     }
 
+    /* NLP Command Center */
+    .cmd-center { border-color: #58a6ff33; border-top: 2px solid var(--blue); }
+    .cmd-center:hover { border-color: #58a6ff55; }
+    .cmd-bar { display: flex; gap: 0.5rem; }
+    .cmd-bar input {
+      flex: 1; padding: 0.65rem 1rem; border-radius: 10px;
+      border: 1px solid var(--border); background: var(--bg);
+      color: var(--text-bright); font-family: inherit; font-size: 0.85rem;
+      transition: all 0.25s;
+    }
+    .cmd-bar input:focus {
+      outline: none; border-color: var(--blue);
+      box-shadow: 0 0 0 3px #58a6ff18, 0 0 20px #58a6ff08;
+    }
+    .cmd-bar input::placeholder { color: var(--muted-dim); }
+    .cmd-bar button {
+      padding: 0.65rem 1.25rem; border-radius: 10px; border: 1px solid var(--blue);
+      background: var(--blue-bg); color: var(--blue); cursor: pointer;
+      font-family: inherit; font-size: 0.8rem; font-weight: 600;
+      white-space: nowrap; transition: all 0.2s; min-width: 90px;
+    }
+    .cmd-bar button:hover {
+      background: #58a6ff22; box-shadow: 0 2px 12px #58a6ff20;
+      transform: translateY(-1px);
+    }
+    .cmd-bar button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .cmd-hints {
+      display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.6rem;
+    }
+    .cmd-hint {
+      font-size: 0.65rem; padding: 0.2rem 0.55rem; border-radius: 6px;
+      background: #ffffff06; border: 1px solid #ffffff0a; color: var(--muted);
+      cursor: pointer; transition: all 0.15s;
+    }
+    .cmd-hint:hover {
+      background: var(--blue-bg); border-color: #58a6ff33; color: var(--blue);
+    }
+    .cmd-result {
+      margin-top: 0.75rem; padding: 0.75rem 1rem; border-radius: 8px;
+      font-size: 0.8rem; line-height: 1.6; animation: cmdFadeIn 0.3s ease;
+    }
+    .cmd-result.success { background: var(--green-bg); border-left: 3px solid var(--green); }
+    .cmd-result.error { background: var(--red-bg); border-left: 3px solid var(--red); }
+    .cmd-result.thinking { background: var(--blue-bg); border-left: 3px solid var(--blue); }
+    .cmd-result .cmd-action {
+      display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px;
+      background: #ffffff08; font-weight: 600; font-size: 0.75rem; margin: 0.15rem 0;
+    }
+    @keyframes cmdFadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
     /* Strategy picker */
     .strat-grid { display: flex; flex-direction: column; gap: 0.4rem; }
     .strat-opt {
@@ -277,6 +327,37 @@
     .quick-form button:hover {
       border-color: var(--blue); color: var(--blue);
       background: var(--blue-bg); transform: translateY(-1px);
+    }
+
+    /* Tooltips — base styles */
+    [data-tip], [data-tip-below] { position: relative; }
+    [data-tip]::after, [data-tip-below]::after {
+      position: absolute; left: 50%;
+      transform: translateX(-50%) scale(0.95); opacity: 0;
+      background: var(--text-bright); color: var(--bg); font-size: 0.62rem;
+      font-weight: 500; padding: 0.35rem 0.6rem; border-radius: 6px;
+      white-space: nowrap; pointer-events: none; z-index: 100;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+      transition: opacity 0.2s, transform 0.2s;
+    }
+    [data-tip]::before, [data-tip-below]::before {
+      content: '';
+      position: absolute; left: 50%;
+      transform: translateX(-50%) scale(0.95); opacity: 0;
+      border: 5px solid transparent;
+      pointer-events: none; z-index: 100;
+      transition: opacity 0.2s, transform 0.2s;
+    }
+    /* Above (default) */
+    [data-tip]::after { content: attr(data-tip); bottom: calc(100% + 8px); }
+    [data-tip]::before { bottom: calc(100% + 2px); border-top-color: var(--text-bright); }
+    /* Below (for header) */
+    [data-tip-below]::after { content: attr(data-tip-below); top: calc(100% + 8px); }
+    [data-tip-below]::before { top: calc(100% + 2px); border-bottom-color: var(--text-bright); }
+    /* Show on hover */
+    [data-tip]:hover::after, [data-tip]:hover::before,
+    [data-tip-below]:hover::after, [data-tip-below]:hover::before {
+      opacity: 1; transform: translateX(-50%) scale(1);
     }
 
     /* Section labels */
@@ -316,14 +397,34 @@
       .container { padding: 1rem; }
       .grid-top { grid-template-columns: repeat(2, 1fr); }
       .grid-main, .grid-bottom { grid-template-columns: 1fr; }
+      .grid-main > .card[style*="grid-column: span 2"],
+      .grid-bottom > .card { grid-column: span 1; }
       header { gap: 0.5rem; }
+      header .left { flex-wrap: wrap; }
       .controls { width: 100%; justify-content: flex-start; }
+      .footer { flex-direction: column; gap: 0.5rem; text-align: center; }
     }
-    @media (max-width: 500px) {
-      .grid-top { grid-template-columns: 1fr; }
+    @media (max-width: 600px) {
+      .container { padding: 0.75rem; }
+      .grid-top { grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+      .card { padding: 1rem; }
+      .card .value { font-size: 1.4rem; }
+      .card .value.sm { font-size: 1.1rem; }
       .log-entry { grid-template-columns: 1fr; gap: 0.2rem; }
       .controls button { padding: 0.35rem 0.6rem; font-size: 0.7rem; }
-      .card .value { font-size: 1.4rem; }
+      .quick-form { flex-direction: column; }
+      .quick-form input { width: 100% !important; }
+      .llm-ask { flex-direction: column; }
+      .llm-ask input { font-size: 0.75rem; }
+      .strat-opt .desc { font-size: 0.62rem; }
+      .x402-grid { grid-template-columns: 1fr !important; }
+      .bal-table { font-size: 0.78rem; }
+      .bal-table th, .bal-table td { padding: 0.4rem 0; }
+    }
+    @media (max-width: 400px) {
+      .grid-top { grid-template-columns: 1fr; }
+      header h1 { font-size: 1.2rem; }
+      .controls { flex-wrap: wrap; gap: 0.35rem; }
     }
   </style>
 </head>
@@ -338,14 +439,16 @@
         <div class="header-sep"></div>
         <span class="badge idle" id="statusBadge">loading</span>
         <span class="badge" id="wdkBadge" style="display:none;background:#3fb95012;color:var(--green);border:1px solid #3fb95033;font-size:0.6rem">WDK</span>
+        <span class="badge" id="erc4337Badge" style="display:none;background:#bc8cff12;color:var(--purple);border:1px solid #bc8cff33;font-size:0.6rem">ERC-4337</span>
+        <span class="badge" id="x402Badge" style="display:none;background:#f0883e12;color:var(--orange);border:1px solid #f0883e33;font-size:0.6rem">x402</span>
         <span style="font-size:0.72rem;color:var(--muted-dim);letter-spacing:0.02em" id="walletAddr"></span>
       </div>
       <div class="controls">
-        <button onclick="doRefresh()">Refresh</button>
-        <button onclick="doCycle()">Run Cycle</button>
-        <button class="primary" onclick="doStart()" id="btnStart">Start Agent</button>
-        <button onclick="doPause()" id="btnPause">Pause</button>
-        <button class="danger" onclick="doStop()">Stop</button>
+        <button onclick="doRefresh()" data-tip-below="Reload balances & prices from blockchain">Refresh</button>
+        <button onclick="doCycle()" data-tip-below="Run one AI evaluation + execute actions">Run Cycle</button>
+        <button class="primary" onclick="doStart()" id="btnStart" data-tip-below="Start auto-loop (evaluates every 60s)">Start Agent</button>
+        <button onclick="doPause()" id="btnPause" data-tip-below="Toggle pause — evaluates but won't execute">Pause</button>
+        <button class="danger" onclick="doStop()" data-tip-below="Stop the auto-loop completely">Stop</button>
       </div>
     </header>
 
@@ -411,15 +514,15 @@
     <!-- Middle: Swap -->
     <div class="grid-main">
       <div class="card">
-        <h3>Swap</h3>
+        <h3>Swap <span id="swapProviderBadge" class="badge" style="font-size:0.6rem;margin-left:0.5rem;background:var(--purple-bg);color:var(--purple);border:1px solid #bc8cff33">Uniswap V3</span></h3>
         <div class="quick-form" style="flex-direction:column;gap:0.75rem">
           <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
             <select id="swapIn"><option>USDT</option><option>DAI</option><option>USDC</option><option>WETH</option></select>
             <span style="color:var(--muted-dim);font-size:0.9rem">→</span>
             <select id="swapOut"><option>USDC</option><option>USDT</option><option>DAI</option><option>WETH</option></select>
             <input type="number" id="swapAmt" placeholder="Amount" style="width:120px">
-            <button onclick="doQuote()">Quote</button>
-            <button onclick="doSwap()" style="border-color:#bc8cff66;color:var(--purple);background:var(--purple-bg)">Swap</button>
+            <button onclick="doQuote()" data-tip="Get price estimate without executing">Quote</button>
+            <button onclick="doSwap()" data-tip="Execute swap on-chain (costs gas)" style="border-color:#bc8cff66;color:var(--purple);background:var(--purple-bg)">Swap</button>
           </div>
           <div id="swapQuote" style="font-size:0.8rem;color:var(--muted)">Enter amount and click Quote</div>
         </div>
@@ -456,8 +559,8 @@
               <option value="ink">Ink</option>
             </select>
             <input type="number" id="bridgeAmt" placeholder="USDT0 Amount" style="width:130px">
-            <button onclick="doBridgeQuote()">Quote</button>
-            <button onclick="doBridge()" style="border-color:#3fb95066;color:var(--green);background:var(--green-bg)">Bridge</button>
+            <button onclick="doBridgeQuote()" data-tip="Estimate bridge fee (read-only)">Quote</button>
+            <button onclick="doBridge()" data-tip="Send USDT0 cross-chain via LayerZero" style="border-color:#3fb95066;color:var(--green);background:var(--green-bg)">Bridge</button>
           </div>
           <div id="bridgeQuote" style="font-size:0.8rem;color:var(--muted)">Select route and amount, then Quote</div>
         </div>
@@ -475,6 +578,119 @@
       </div>
     </div>
 
+    <!-- x402 Agentic Payments -->
+    <div class="grid-main">
+      <div class="card" style="grid-column: span 2">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
+          <div style="display:flex;align-items:center;gap:0.5rem">
+            <h3 style="margin:0">x402 Agentic Payments</h3>
+            <span class="badge" id="x402SectionBadge" style="font-size:0.55rem;background:#f0883e12;color:var(--orange);border:1px solid #f0883e33">USDT0</span>
+          </div>
+          <div id="x402SectionStatus" style="font-size:0.7rem;color:var(--muted)">Loading...</div>
+        </div>
+        <div id="x402Section">
+          <div class="x402-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+            <div>
+              <h4 style="font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.5rem">Payment-Gated Endpoints</h4>
+              <div id="x402Routes" style="font-size:0.75rem">
+                <div style="display:flex;justify-content:space-between;padding:0.35rem 0;border-bottom:1px solid #ffffff08">
+                  <span style="color:var(--text)">GET /api/snapshot</span>
+                  <span style="color:var(--green)">$0.01</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;padding:0.35rem 0;border-bottom:1px solid #ffffff08">
+                  <span style="color:var(--text)">POST /api/swap/execute</span>
+                  <span style="color:var(--green)">$0.10</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;padding:0.35rem 0;border-bottom:1px solid #ffffff08">
+                  <span style="color:var(--text)">POST /api/bridge/execute</span>
+                  <span style="color:var(--green)">$0.10</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;padding:0.35rem 0">
+                  <span style="color:var(--text)">POST /api/llm/reason</span>
+                  <span style="color:var(--green)">$0.05</span>
+                </div>
+              </div>
+            </div>
+            <div>
+              <h4 style="font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.5rem">Protocol Info</h4>
+              <div style="font-size:0.75rem;display:flex;flex-direction:column;gap:0.3rem">
+                <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Protocol</span><span id="x402Protocol">x402 (HTTP 402)</span></div>
+                <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Implementation</span><span>@t402/* (Tether)</span></div>
+                <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Payment Method</span><span>EIP-3009</span></div>
+                <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Gas Cost (payer)</span><span style="color:var(--green)">Gasless</span></div>
+                <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Network</span><span id="x402Network">—</span></div>
+                <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Token</span><span id="x402Token">USDT0</span></div>
+                <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Facilitator</span><span id="x402Facilitator" style="font-size:0.65rem">—</span></div>
+              </div>
+            </div>
+          </div>
+          <div style="margin-top:0.75rem;padding:0.5rem 0.75rem;background:#f0883e08;border:1px solid #f0883e22;border-radius:8px;font-size:0.7rem;color:var(--muted)">
+            <strong style="color:var(--orange)">How it works:</strong> Agents calling gated endpoints receive HTTP 402 → auto-sign USDT0 payment via <code>transferWithAuthorization</code> (EIP-3009) → facilitator verifies + settles on-chain → endpoint serves data. Client pays zero gas.
+          </div>
+          <!-- Revenue Tracking -->
+          <div style="margin-top:1rem;padding-top:0.75rem;border-top:1px solid var(--border)">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
+              <h4 style="font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin:0">Revenue</h4>
+              <span id="revTotal" style="font-size:1rem;font-weight:700;color:var(--green)">$0.00</span>
+            </div>
+            <div style="display:flex;gap:1rem;margin-bottom:0.5rem">
+              <div style="flex:1;text-align:center;padding:0.4rem;background:var(--bg);border-radius:8px">
+                <div style="font-size:0.6rem;color:var(--muted);text-transform:uppercase">Payments</div>
+                <div id="revCount" style="font-size:0.9rem;font-weight:600;color:var(--text-bright)">0</div>
+              </div>
+              <div style="flex:1;text-align:center;padding:0.4rem;background:var(--bg);border-radius:8px">
+                <div style="font-size:0.6rem;color:var(--muted);text-transform:uppercase">Avg / Payment</div>
+                <div id="revAvg" style="font-size:0.9rem;font-weight:600;color:var(--text-bright)">$0.00</div>
+              </div>
+            </div>
+            <div id="revByRoute" style="font-size:0.75rem"></div>
+            <div id="revRecent" style="max-height:120px;overflow-y:auto;margin-top:0.4rem"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Transaction History -->
+    <div class="grid-main">
+      <div class="card" style="grid-column: span 2">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
+          <h3 style="margin:0">Transaction History</h3>
+          <span id="historyBadge" style="font-size:0.6rem;color:var(--muted)">WDK Indexer</span>
+        </div>
+        <div id="historyContent" style="max-height:240px;overflow-y:auto">
+          <div style="font-size:0.8rem;color:var(--muted)">Loading...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Natural Language Command Center -->
+    <div style="margin-bottom:1.25rem">
+      <div class="card cmd-center">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
+          <div style="display:flex;align-items:center;gap:0.5rem">
+            <span style="font-size:1rem">&#9889;</span>
+            <h3 style="margin:0">Command Center</h3>
+            <span style="font-size:0.6rem;color:var(--muted-dim);letter-spacing:0.03em">Natural Language Control</span>
+          </div>
+          <span style="font-size:0.62rem;color:var(--muted-dim)" id="cmdSource"></span>
+        </div>
+        <div class="cmd-bar">
+          <input type="text" id="cmdInput" placeholder="Type a command: &quot;supply 50 USDT&quot;, &quot;swap 100 USDT to WETH&quot;, &quot;what's my portfolio?&quot;">
+          <button onclick="runCommand()" id="cmdBtn">Execute</button>
+        </div>
+        <div class="cmd-hints">
+          <span class="cmd-hint" onclick="fillCmd('supply 50 USDT')">supply 50 USDT</span>
+          <span class="cmd-hint" onclick="fillCmd('withdraw all DAI')">withdraw all DAI</span>
+          <span class="cmd-hint" onclick="fillCmd('swap 100 USDT to WETH')">swap 100 USDT to WETH</span>
+          <span class="cmd-hint" onclick="fillCmd('bridge 50 to arbitrum')">bridge 50 to arbitrum</span>
+          <span class="cmd-hint" onclick="fillCmd('set strategy aggressive')">strategy aggressive</span>
+          <span class="cmd-hint" onclick="fillCmd('start')">start agent</span>
+          <span class="cmd-hint" onclick="fillCmd('What is my health factor?')">ask AI</span>
+        </div>
+        <div id="cmdResult"></div>
+      </div>
+    </div>
+
     <!-- LLM Reasoning -->
     <div class="grid-main" style="margin-bottom:1.25rem">
       <div class="card llm-panel" style="grid-column: span 2">
@@ -486,7 +702,7 @@
           </div>
           <div style="display:flex;gap:0.6rem;align-items:center">
             <span style="font-size:0.62rem;color:var(--muted-dim)" id="llmLatency"></span>
-            <button onclick="toggleLlm()" id="btnLlm" style="padding:0.35rem 0.75rem;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--muted);cursor:pointer;font-family:inherit;font-size:0.7rem;font-weight:500;transition:all 0.2s">Enable</button>
+            <button onclick="toggleLlm()" id="btnLlm" data-tip="Toggle AI reasoning — off = rule-based fallback only" style="padding:0.35rem 0.75rem;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--muted);cursor:pointer;font-family:inherit;font-size:0.7rem;font-weight:500;transition:all 0.2s">Enable</button>
           </div>
         </div>
         <div id="llmContent">
@@ -516,7 +732,13 @@
             <div style="display:flex;justify-content:space-between"><span>Cycle</span><span style="color:var(--text)" id="cycleCount">0</span></div>
             <div style="display:flex;justify-content:space-between"><span>Uptime</span><span style="color:var(--text)" id="uptime">—</span></div>
             <div style="display:flex;justify-content:space-between"><span>ETH Gas</span><span style="color:var(--text)" id="ethBal">—</span></div>
+            <div style="display:flex;justify-content:space-between"><span>Smart Account</span><span style="color:var(--text)" id="erc4337Status">—</span></div>
+            <div style="display:flex;justify-content:space-between"><span>x402 Payments</span><span style="color:var(--text)" id="x402Status">—</span></div>
           </div>
+        </div>
+        <div style="margin-top:1.25rem">
+          <h3>WDK Modules <span class="badge" id="wdkModuleCount" style="font-size:0.6rem;margin-left:0.5rem;background:var(--blue-bg);color:var(--blue);border:1px solid #58a6ff33">7/8</span></h3>
+          <div style="display:flex;gap:0.3rem;flex-wrap:wrap;margin-top:0.4rem" id="wdkModuleList"></div>
         </div>
       </div>
     </div>
@@ -524,13 +746,14 @@
     <!-- Footer -->
     <div class="footer">
       <span>Tsentry v1.0 — Autonomous Treasury Agent</span>
-      <span>Powered by Tether WDK + Aave V3 + LayerZero</span>
+      <span>Powered by Tether WDK + ERC-4337 + x402 + Velora + Aave V3 + LayerZero</span>
     </div>
   </div>
 
   <script>
     const strategies = [
       { key: 'USDT_YIELD', name: 'USDT Yield', desc: '70% lending, USDT-first — consolidates DAI/USDC → USDT' },
+      { key: 'TETHER_DIVERSIFIED', name: 'Tether Diversified', desc: '60% lending, 15% RWA (USAt/XAUt), 10% liquidity' },
       { key: 'CONSERVATIVE', name: 'Conservative', desc: '60% lending, 10% liquidity, 30% reserve' },
       { key: 'BALANCED', name: 'Balanced', desc: '40% lending, 30% liquidity, 30% reserve' },
       { key: 'AGGRESSIVE', name: 'Aggressive', desc: '50% lending, 40% liquidity, 10% reserve' }
@@ -583,6 +806,119 @@
           wdkBadge.title = status.wdkInfo ? `${status.wdkInfo.derivationPath}` : 'WDK Wallet';
         } else {
           wdkBadge.style.display = 'none';
+        }
+
+        // ERC-4337 badge
+        const erc4337Badge = document.getElementById('erc4337Badge');
+        const erc4337Info = status.wdkInfo?.erc4337;
+        if (erc4337Info?.enabled) {
+          erc4337Badge.style.display = '';
+          erc4337Badge.title = `Smart Account: ${erc4337Info.smartAddress?.slice(0,8)}... (${erc4337Info.mode} mode)`;
+        } else {
+          erc4337Badge.style.display = 'none';
+        }
+
+        // x402 badge + status + section
+        const x402Badge = document.getElementById('x402Badge');
+        fetch('/api/x402').then(r => r.json()).then(x402 => {
+          if (x402.enabled) {
+            x402Badge.style.display = '';
+            x402Badge.title = `x402: ${x402.network} — ${x402.routes?.length || 0} gated routes`;
+            document.getElementById('x402Status').innerHTML = `<span style="color:var(--orange)">Active</span> <span style="color:var(--muted-dim)">(${x402.network})</span>`;
+            // Update x402 section
+            document.getElementById('x402SectionStatus').innerHTML = `<span style="color:var(--green)">ACTIVE</span>`;
+            document.getElementById('x402SectionBadge').style.background = '#3fb95015';
+            document.getElementById('x402SectionBadge').style.color = 'var(--green)';
+            document.getElementById('x402SectionBadge').style.borderColor = '#3fb95033';
+            document.getElementById('x402Network').textContent = x402.network;
+            document.getElementById('x402Facilitator').textContent = x402.facilitatorUrl || 'facilitator.t402.io';
+            if (x402.tokenAddress) {
+              document.getElementById('x402Token').textContent = `USDT0 (${x402.tokenAddress.slice(0,6)}…${x402.tokenAddress.slice(-4)})`;
+            }
+          } else {
+            x402Badge.style.display = 'none';
+            document.getElementById('x402Status').textContent = 'Inactive';
+            document.getElementById('x402SectionStatus').innerHTML = `<span style="color:var(--muted)">INACTIVE</span> <span style="color:var(--muted-dim);font-size:0.6rem">Set X402_NETWORK to enable</span>`;
+            document.getElementById('x402Network').textContent = 'Not configured';
+            document.getElementById('x402Facilitator').textContent = '—';
+          }
+        }).catch(() => {
+          document.getElementById('x402Status').textContent = 'Inactive';
+          document.getElementById('x402SectionStatus').innerHTML = '<span style="color:var(--muted)">INACTIVE</span>';
+        });
+
+        // x402 Revenue
+        fetch('/api/x402/revenue').then(r => r.json()).then(rev => {
+          document.getElementById('revTotal').textContent = `$${rev.totalRevenueUSD?.toFixed(2) || '0.00'}`;
+          document.getElementById('revCount').textContent = rev.totalPayments || 0;
+          const avg = rev.totalPayments > 0 ? (rev.totalRevenueUSD / rev.totalPayments) : 0;
+          document.getElementById('revAvg').textContent = `$${avg.toFixed(4)}`;
+          // Per-route breakdown
+          const routeHtml = Object.entries(rev.byRoute || {}).map(([route, s]) =>
+            `<div style="display:flex;justify-content:space-between;padding:0.25rem 0;border-bottom:1px solid #ffffff06">
+              <span style="color:var(--muted)">${route}</span>
+              <span><span style="color:var(--text-bright)">${s.count}</span> <span style="color:var(--green)">$${s.totalUSD?.toFixed(2)}</span></span>
+            </div>`
+          ).join('');
+          document.getElementById('revByRoute').innerHTML = routeHtml;
+          // Recent payments
+          const recentHtml = (rev.recentPayments || []).slice(-8).reverse().map(p =>
+            `<div style="display:flex;justify-content:space-between;padding:0.2rem 0;font-size:0.7rem;border-bottom:1px solid #ffffff04">
+              <span style="color:var(--muted-dim)">${new Date(p.ts).toLocaleTimeString()}</span>
+              <span style="color:var(--muted)">${p.route}</span>
+              <span style="color:var(--green)">+$${p.amountUSD?.toFixed(4)}</span>
+            </div>`
+          ).join('');
+          document.getElementById('revRecent').innerHTML = recentHtml || '<div style="font-size:0.7rem;color:var(--muted-dim)">No payments yet</div>';
+        }).catch(() => {});
+
+        // Transaction History
+        fetch('/api/history?limit=15').then(r => r.json()).then(hist => {
+          const el = document.getElementById('historyContent');
+          const badge = document.getElementById('historyBadge');
+          if (!hist.enabled) {
+            badge.textContent = 'Inactive';
+            badge.style.color = 'var(--muted-dim)';
+            el.innerHTML = '<div style="font-size:0.75rem;color:var(--muted)">Set WDK_INDEXER_API_KEY to enable transaction history</div>';
+            return;
+          }
+          badge.textContent = 'Active';
+          badge.style.color = 'var(--green)';
+          if (!hist.transfers?.length) {
+            el.innerHTML = '<div style="font-size:0.75rem;color:var(--muted)">No transfers found</div>';
+            return;
+          }
+          el.innerHTML = hist.transfers.map(tx => {
+            const isIn = tx.to?.toLowerCase() === status.address?.toLowerCase();
+            const dir = isIn ? 'IN' : 'OUT';
+            const dirColor = isIn ? 'var(--green)' : 'var(--red)';
+            const amount = tx.value ? (Number(tx.value) / 1e6).toFixed(2) : tx.amount || '?';
+            const token = tx.tokenSymbol || tx.token || 'USDT';
+            const time = tx.timestamp ? new Date(tx.timestamp * 1000).toLocaleString() : tx.blockNumber || '';
+            const addr = isIn ? tx.from : tx.to;
+            const shortAddr = addr ? `${addr.slice(0,6)}...${addr.slice(-4)}` : '';
+            return `<div style="display:flex;justify-content:space-between;align-items:center;padding:0.4rem 0;border-bottom:1px solid #ffffff06;font-size:0.75rem">
+              <div style="display:flex;align-items:center;gap:0.5rem">
+                <span style="color:${dirColor};font-weight:600;font-size:0.65rem;width:28px">${dir}</span>
+                <span style="color:var(--text-bright);font-weight:500">${amount} ${token}</span>
+              </div>
+              <span style="color:var(--muted)">${shortAddr}</span>
+              <span style="color:var(--muted-dim);font-size:0.65rem">${time}</span>
+            </div>`;
+          }).join('');
+        }).catch(() => {
+          document.getElementById('historyContent').innerHTML = '<div style="font-size:0.75rem;color:var(--muted)">Failed to load history</div>';
+        });
+
+        // Swap provider badge
+        const swapBadge = document.getElementById('swapProviderBadge');
+        if (status.swapProvider === 'velora') {
+          swapBadge.textContent = 'Velora (160+ DEXs)';
+          swapBadge.style.background = 'var(--green-bg)';
+          swapBadge.style.color = 'var(--green)';
+          swapBadge.style.borderColor = '#3fb95033';
+        } else {
+          swapBadge.textContent = 'Uniswap V3';
         }
 
         // KPIs
@@ -644,7 +980,7 @@
         document.getElementById('resPct').textContent = rPct.toFixed(1);
 
         // Strategy — map display name back to key
-        const stratNameToKey = { 'USDT Yield': 'USDT_YIELD', 'Conservative': 'CONSERVATIVE', 'Balanced': 'BALANCED', 'Aggressive': 'AGGRESSIVE' };
+        const stratNameToKey = { 'USDT Yield': 'USDT_YIELD', 'Tether Diversified': 'TETHER_DIVERSIFIED', 'Conservative': 'CONSERVATIVE', 'Balanced': 'BALANCED', 'Aggressive': 'AGGRESSIVE' };
         currentStrategy = stratNameToKey[status.strategy] || status.strategy?.toUpperCase().replace(/\s+/g, '_') || 'USDT_YIELD';
         document.querySelectorAll('.strat-opt').forEach(el => {
           el.classList.toggle('active', el.id === `strat-${currentStrategy}`);
@@ -669,6 +1005,36 @@
         document.getElementById('cycleCount').textContent = status.cycle || 0;
         document.getElementById('uptime').textContent = formatUptime(status.uptime);
         document.getElementById('ethBal').textContent = `${(portfolio.balances?.ETH || 0).toFixed(6)} ETH`;
+
+        // ERC-4337 status in Agent Info
+        const erc4337StatusEl = document.getElementById('erc4337Status');
+        if (erc4337Info?.enabled) {
+          erc4337StatusEl.textContent = `${erc4337Info.mode} mode`;
+          erc4337StatusEl.style.color = 'var(--purple)';
+        } else {
+          erc4337StatusEl.textContent = 'not configured';
+          erc4337StatusEl.style.color = 'var(--muted-dim)';
+        }
+
+        // WDK Modules list
+        const modules = [
+          { name: 'Wallet', active: status.walletSource === 'wdk' },
+          { name: 'ERC-4337', active: !!erc4337Info?.enabled },
+          { name: 'Velora', active: status.swapProvider === 'velora' },
+          { name: 'Aave', active: true },
+          { name: 'USDT0', active: true },
+          { name: 'MCP', active: true },
+          { name: 'Skills', active: true },
+          { name: 'x402', active: document.getElementById('x402Badge').style.display !== 'none' }
+        ];
+        const activeCount = modules.filter(m => m.active).length;
+        document.getElementById('wdkModuleCount').textContent = `${activeCount}/8`;
+        document.getElementById('wdkModuleList').innerHTML = modules.map(m =>
+          `<span class="badge" style="font-size:0.6rem;${m.active
+            ? 'background:var(--green-bg);color:var(--green);border:1px solid #3fb95033'
+            : 'background:var(--card);color:var(--muted-dim);border:1px solid var(--border)'
+          }">${m.name}</span>`
+        ).join('');
 
         // Action log
         if (actions.actions?.length > 0) {
@@ -995,6 +1361,98 @@
 
     document.getElementById('llmInstruction').addEventListener('keydown', e => {
       if (e.key === 'Enter') askLlm();
+    });
+
+    // ─── Natural Language Command Center ───
+
+    function fillCmd(text) {
+      document.getElementById('cmdInput').value = text;
+      document.getElementById('cmdInput').focus();
+    }
+
+    async function runCommand() {
+      const input = document.getElementById('cmdInput');
+      const text = input.value.trim();
+      if (!text) return;
+
+      const btn = document.getElementById('cmdBtn');
+      const resultEl = document.getElementById('cmdResult');
+      const sourceEl = document.getElementById('cmdSource');
+
+      btn.disabled = true;
+      btn.textContent = 'Running...';
+      resultEl.innerHTML = '<div class="cmd-result thinking">Processing command...</div>';
+
+      try {
+        const res = await api('POST', '/api/command', { text });
+
+        if (res.error) {
+          resultEl.innerHTML = `<div class="cmd-result error">${escHtml(res.error)}</div>`;
+          toast('Command failed', 'error');
+        } else if (res.ok) {
+          sourceEl.textContent = res.source === 'pattern' ? 'Pattern matched' : 'AI parsed';
+          let html = '';
+
+          // Show parsed action
+          if (res.parsed) {
+            html += `<div class="cmd-result success">`;
+            html += `<span class="cmd-action">${escHtml(res.parsed.action)}</span> `;
+            if (res.parsed.token) html += `${escHtml(res.parsed.token)} `;
+            if (res.parsed.tokenIn) html += `${escHtml(res.parsed.tokenIn)} → ${escHtml(res.parsed.tokenOut || '?')} `;
+            if (res.parsed.amount) html += `amount: ${res.parsed.amount} `;
+            if (res.parsed.targetChain) html += `→ ${escHtml(res.parsed.targetChain)} `;
+            if (res.parsed.name) html += `${escHtml(res.parsed.name)} `;
+
+            // Show result
+            if (res.result) {
+              if (res.result.hash) html += `<br><span style="color:var(--muted);font-size:0.75rem">tx: ${escHtml(res.result.hash)}</span>`;
+              if (res.result.strategy) html += `<br><span style="color:var(--green)">Strategy set to ${escHtml(res.result.strategy.name || res.result.strategy)}</span>`;
+              if (res.result.active !== undefined) html += `<br><span style="color:var(--green)">Agent ${res.result.active ? 'started' : 'stopped'}</span>`;
+              if (res.result.paused !== undefined) html += `<br><span style="color:var(--green)">Agent ${res.result.paused ? 'paused' : 'resumed'}</span>`;
+            }
+            html += '</div>';
+          }
+
+          // LLM response with answer
+          if (res.decision) {
+            html += '<div class="cmd-result success">';
+            if (res.decision.answer) {
+              html += `<div style="margin-bottom:0.5rem">${escHtml(res.decision.answer)}</div>`;
+            }
+            if (res.decision.reasoning) {
+              html += `<div style="color:var(--muted);font-size:0.75rem">${escHtml(res.decision.reasoning)}</div>`;
+            }
+            // Show executed actions
+            if (res.executed?.length > 0) {
+              html += '<div style="margin-top:0.5rem">';
+              for (const ex of res.executed) {
+                html += `<div style="margin:0.25rem 0"><span class="cmd-action">${escHtml(ex.action.type)}</span> `;
+                html += ex.action.token ? escHtml(ex.action.token) + ' ' : '';
+                html += ex.action.amount ? ex.action.amount + ' ' : '';
+                html += ex.error ? `<span style="color:var(--red)">— ${escHtml(ex.error)}</span>` : `<span style="color:var(--green)">— done</span>`;
+                html += '</div>';
+              }
+              html += '</div>';
+            }
+            html += '</div>';
+          }
+
+          resultEl.innerHTML = html || '<div class="cmd-result success">Done.</div>';
+          input.value = '';
+          toast('Command executed', 'success');
+          await refresh();
+        }
+      } catch (e) {
+        resultEl.innerHTML = `<div class="cmd-result error">Error: ${escHtml(e.message)}</div>`;
+        toast('Command failed', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Execute';
+      }
+    }
+
+    document.getElementById('cmdInput').addEventListener('keydown', e => {
+      if (e.key === 'Enter') runCommand();
     });
 
     // Init
