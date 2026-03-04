@@ -843,6 +843,7 @@
             <div style="display:flex;justify-content:space-between"><span>Cycle</span><span style="color:var(--text)" id="cycleCount">0</span></div>
             <div style="display:flex;justify-content:space-between"><span>Uptime</span><span style="color:var(--text)" id="uptime">—</span></div>
             <div style="display:flex;justify-content:space-between"><span>ETH Gas</span><span style="color:var(--text)" id="ethBal">—</span></div>
+            <div style="display:flex;justify-content:space-between"><span>DEX Provider</span><span style="color:var(--text)" id="swapProviderStatus">—</span></div>
             <div style="display:flex;justify-content:space-between"><span>Smart Account</span><span style="color:var(--text)" id="erc4337Status">—</span></div>
             <div style="display:flex;justify-content:space-between"><span>x402 Payments</span><span style="color:var(--text)" id="x402Status">—</span></div>
           </div>
@@ -1148,6 +1149,16 @@
         document.getElementById('cycleCount').textContent = status.cycle || 0;
         document.getElementById('uptime').textContent = formatUptime(status.uptime);
         document.getElementById('ethBal').textContent = `${(portfolio.balances?.ETH || 0).toFixed(6)} ETH`;
+
+        // Swap provider in Agent Info
+        const swapEl = document.getElementById('swapProviderStatus');
+        if (status.swapProvider === 'velora') {
+          swapEl.textContent = 'Velora (160+ DEXs)';
+          swapEl.style.color = 'var(--green)';
+        } else {
+          swapEl.textContent = 'Uniswap V3 (testnet)';
+          swapEl.style.color = 'var(--muted)';
+        }
 
         // ERC-4337 status in Agent Info
         const erc4337StatusEl = document.getElementById('erc4337Status');

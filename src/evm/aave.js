@@ -97,15 +97,31 @@ export class AaveLending {
     }
 
     // Supply
-    const tx = await this.pool.supply(tokenInfo.address, parsed, this.signer.address, 0)
-    const receipt = await tx.wait()
+    try {
+      const tx = await this.pool.supply(tokenInfo.address, parsed, this.signer.address, 0)
+      const receipt = await tx.wait()
 
-    return {
-      tx: tx.hash,
-      receipt,
-      suppliedAmount: amount,
-      symbol,
-      gasUsed: receipt.gasUsed.toString()
+      return {
+        tx: tx.hash,
+        receipt,
+        suppliedAmount: amount,
+        symbol,
+        gasUsed: receipt.gasUsed.toString()
+      }
+    } catch (e) {
+      // Aave V3 error codes → human-readable messages
+      const aaveErrors = {
+        26: 'Insufficient balance to supply',
+        27: 'Invalid amount (must be > 0)',
+        28: 'Reserve is not active',
+        29: 'Reserve is frozen',
+        51: `Supply cap exceeded for ${symbol} — try a smaller amount or different token (DAI, USDC)`
+      }
+      const code = e.reason?.match?.(/^(\d+)$/)?.[1]
+      if (code && aaveErrors[code]) {
+        throw new Error(`Aave: ${aaveErrors[code]}`)
+      }
+      throw e
     }
   }
 
