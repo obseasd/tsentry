@@ -44,13 +44,13 @@ api() {
   echo -e "  ${CYAN}${method} ${BASE}${endpoint}${RESET}"
 
   if [[ "$method" == "GET" ]]; then
-    out=$(curl -s "${BASE}${endpoint}" 2>/dev/null || echo '{"error":"connection refused"}')
+    out=$(curl -4 -s --connect-timeout 5 "${BASE}${endpoint}" 2>&1 || echo '{"error":"connection refused"}')
   else
     if [[ -n "$data" ]]; then
       echo -e "  ${DIM}Body: ${data}${RESET}"
-      out=$(curl -s -X "$method" "${BASE}${endpoint}" -H "Content-Type: application/json" -d "$data" 2>/dev/null || echo '{"error":"connection refused"}')
+      out=$(curl -4 -s --connect-timeout 5 -X "$method" "${BASE}${endpoint}" -H "Content-Type: application/json" -d "$data" 2>&1 || echo '{"error":"connection refused"}')
     else
-      out=$(curl -s -X "$method" "${BASE}${endpoint}" 2>/dev/null || echo '{"error":"connection refused"}')
+      out=$(curl -4 -s --connect-timeout 5 -X "$method" "${BASE}${endpoint}" 2>&1 || echo '{"error":"connection refused"}')
     fi
   fi
 
