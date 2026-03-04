@@ -12,7 +12,7 @@
 
 set -uo pipefail
 
-BASE="${TSENTRY_URL:-http://localhost:3000}"
+BASE="${TSENTRY_URL:-http://127.0.0.1:3000}"
 FAST="${1:-}"
 CYAN='\033[36m'; GREEN='\033[32m'; YELLOW='\033[33m'; RED='\033[31m'
 BOLD='\033[1m'; DIM='\033[2m'; RESET='\033[0m'
