@@ -41,6 +41,28 @@ app.get('/', (req, res) => {
 
 // ─── API: Read ───
 
+app.get('/api/health', (req, res) => {
+  const snap = agent.getSnapshot()
+  res.json({
+    status: 'ok',
+    version: '0.1.0',
+    uptime: Math.round(process.uptime()),
+    wallet: !!snap.address,
+    modules: {
+      wallet: true,
+      aave: !!agent.aave,
+      swap: !!agent.swap,
+      bridge: !!agent.bridge,
+      erc4337: !!agent.erc4337,
+      x402: !!x402State,
+      llm: !!agent.llm,
+      mcp: true
+    },
+    agent: { active: snap.active, paused: snap.paused, cycle: snap.cycle },
+    memory: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + 'MB'
+  })
+})
+
 app.get('/api/status', readLimiter, (req, res) => {
   const snap = agent.getSnapshot()
   res.json({
