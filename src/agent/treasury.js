@@ -5,10 +5,12 @@ import { createWdkWallet } from '../wdk/wallet-adapter.js'
 import { createWalletFromEnv } from '../evm/wallet.js'
 import { AaveLending } from '../evm/aave.js'
 import { UniswapSwap } from '../evm/swap.js'
+import { VeloraSwap } from '../evm/velora.js'
 import { Usdt0Bridge } from '../evm/bridge.js'
 import { calculatePortfolioValue, getPrices } from '../evm/pricing.js'
 import { STRATEGIES } from './strategies.js'
 import { LlmReasoning } from './llm.js'
+import { createX402Client, getX402ClientInfo } from '../x402/client.js'
 
 /**
  * TreasuryAgent — full autonomous loop:
@@ -20,6 +22,8 @@ export class TreasuryAgent {
     this.aave = null
     this.swap = null
     this.bridge = null
+    this.erc4337 = null
+    this.x402 = null
     this.llm = null
     this.strategy = null
     this.active = false
@@ -71,15 +75,44 @@ export class TreasuryAgent {
       tokens: this.wallet.tokens
     })
 
-    this.swap = new UniswapSwap({
-      signer: this.wallet.signer,
-      tokens: this.wallet.tokens
-    })
+    // Swap: Velora (WDK-native, 160+ DEX aggregator) on mainnet,
+    // Uniswap V3 fallback on testnet (Velora/ParaSwap API doesn't support testnets)
+    this.swapProvider = 'uniswap' // default
+    if (this.walletSource === 'wdk' && this.wallet.wdkAccount) {
+      try {
+        const veloraSwap = new VeloraSwap({
+          wdkAccount: this.wallet.wdkAccount,
+          tokens: this.wallet.tokens
+        })
+        await veloraSwap.init()
+
+        if (veloraSwap.isSupported()) {
+          this.swap = veloraSwap
+          this.swapProvider = 'velora'
+          this.log('swap', 'Velora DEX aggregator initialized (WDK-native, 160+ DEXs)')
+        } else {
+          this.log('swap', `Chain ${veloraSwap._chainId} not supported by Velora — falling back to Uniswap V3`)
+          this.swap = new UniswapSwap({ signer: this.wallet.signer, tokens: this.wallet.tokens })
+        }
+      } catch (e) {
+        this.log('swap', `Velora init failed: ${e.message} — falling back to Uniswap V3`)
+        this.swap = new UniswapSwap({ signer: this.wallet.signer, tokens: this.wallet.tokens })
+      }
+    } else {
+      this.swap = new UniswapSwap({ signer: this.wallet.signer, tokens: this.wallet.tokens })
+    }
 
     // Discover available swap pairs
     try {
       this.swapPairs = await this.swap.getAvailablePairs()
     } catch { this.swapPairs = [] }
+
+    // ERC-4337 Account Abstraction (optional — gasless tx, batched ops)
+    // Activated when ERC4337_BUNDLER_URL is set + WDK wallet is active
+    if (this.walletSource === 'wdk' && this.wallet.erc4337) {
+      this.erc4337 = this.wallet.erc4337
+      this.log('erc4337', `Smart Account initialized (${this.erc4337.mode} mode)`, this.erc4337.getInfo())
+    }
 
     // USDT0 bridge (mainnet — quote-only from testnet)
     this.bridge = new Usdt0Bridge({ signer: this.wallet.signer })
@@ -105,9 +138,27 @@ export class TreasuryAgent {
       this.log('llm', 'No ANTHROPIC_API_KEY — using rule-based evaluation only')
     }
 
+    // x402 payment client (agent-to-agent payments)
+    // Activated when X402_NETWORK is set (e.g., "eip155:42161" for Arbitrum)
+    if (process.env.X402_NETWORK && this.wallet.signer) {
+      try {
+        const network = await this.wallet.provider.getNetwork()
+        this.x402 = createX402Client({
+          wallet: this.wallet.signer,
+          chainId: Number(network.chainId),
+          network: process.env.X402_NETWORK
+        })
+        this.log('x402', `Payment client initialized (${process.env.X402_NETWORK})`, getX402ClientInfo(this.x402))
+      } catch (e) {
+        this.log('x402', `x402 client init failed: ${e.message} — continuing without payments`)
+        this.x402 = null
+      }
+    }
+
     await this.refresh()
-    this.log('init', `Agent initialized — wallet ${this.wallet.address} (${this.walletSource})`, {
+    this.log('init', `Agent initialized — wallet ${this.wallet.address} (${this.walletSource}), swap: ${this.swapProvider}`, {
       walletSource: this.walletSource,
+      swapProvider: this.swapProvider,
       balances: this.balances,
       supplied: this.supplied,
       swapPairs: this.swapPairs.map(p => `${p.tokenA}/${p.tokenB}`),
@@ -423,12 +474,14 @@ export class TreasuryAgent {
   }
 
   /**
-   * Execute an action on-chain
+   * Execute an action on-chain with confirmation + retry
    * @param {object} action
+   * @param {number} [attempt=1] - Current retry attempt
    * @returns {object} result
    */
-  async execute (action) {
-    this.log('execute', `Executing ${action.type}: ${action.reason}`, action)
+  async execute (action, attempt = 1) {
+    const MAX_RETRIES = 2
+    this.log('execute', `Executing ${action.type}: ${action.reason}${attempt > 1 ? ` (retry ${attempt}/${MAX_RETRIES})` : ''}`, action)
 
     try {
       let result
@@ -479,12 +532,34 @@ export class TreasuryAgent {
           result = { skipped: true, reason: `Unhandled action type: ${action.type}` }
       }
 
-      this.log('execute_done', `Completed ${action.type}`, {
-        tx: result.tx,
-        gasUsed: result.gasUsed
-      })
+      // Verify tx receipt if present
+      if (result.tx && !result.skipped) {
+        if (result.receipt?.status === 0) {
+          throw new Error(`Transaction reverted: ${result.tx}`)
+        }
+        this.log('execute_done', `Confirmed ${action.type} (tx: ${result.tx})`, {
+          tx: result.tx,
+          gasUsed: result.gasUsed,
+          status: 'confirmed'
+        })
+      } else {
+        this.log('execute_done', `Completed ${action.type}`, {
+          tx: result.tx,
+          gasUsed: result.gasUsed
+        })
+      }
+
       return result
     } catch (e) {
+      // Retry on transient network errors
+      const transient = /nonce|timeout|NETWORK_ERROR|replacement fee|ETIMEDOUT|ECONNRESET/i
+      if (transient.test(e.message) && attempt <= MAX_RETRIES) {
+        const delayMs = 2000 * attempt
+        this.log('retry', `Transient error: ${e.message} — retrying in ${delayMs}ms (attempt ${attempt}/${MAX_RETRIES})`)
+        await new Promise(r => setTimeout(r, delayMs))
+        return this.execute(action, attempt + 1)
+      }
+
       this.logError('execute', e, action)
       return { error: e.message }
     }
@@ -597,8 +672,11 @@ export class TreasuryAgent {
       prices: this.prices,
       lendingPct: this._currentLendingPct(),
       swapPairs: this.swapPairs,
+      swapProvider: this.swapProvider || 'uniswap',
       bridgeChains: this.bridgeChains,
       bridgeRoutes: this.bridgeRoutes,
+      erc4337: this.erc4337 ? this.erc4337.getInfo() : { enabled: false },
+      x402: getX402ClientInfo(this.x402),
       llm: {
         enabled: this.llmEnabled,
         connected: !!this.llm,

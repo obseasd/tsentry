@@ -594,6 +594,116 @@ Examples:
   )
 }
 
+// ─── x402 Payment Tools ───
+
+import { createX402Client, getX402ClientInfo } from './x402/client.js'
+
+let x402Client = null
+if (process.env.X402_NETWORK && process.env.ETH_PRIVATE_KEY) {
+  try {
+    const { ethers } = await import('ethers')
+    const provider = new ethers.JsonRpcProvider(RPC_URL)
+    const x402Signer = new ethers.Wallet(process.env.ETH_PRIVATE_KEY, provider)
+    const network = await provider.getNetwork()
+    x402Client = createX402Client({
+      wallet: x402Signer,
+      chainId: Number(network.chainId),
+      network: process.env.X402_NETWORK
+    })
+    console.error(`[tsentry-mcp] x402 payment client initialized (${process.env.X402_NETWORK})`)
+  } catch (e) {
+    console.error(`[tsentry-mcp] x402 client init failed: ${e.message}`)
+  }
+}
+
+function tsentryX402Status (server) {
+  server.registerTool(
+    'tsentry_x402_status',
+    {
+      title: 'Tsentry x402 Payment Status',
+      description: `Get the status of the x402 payment protocol integration.
+
+Shows whether x402 is enabled, the configured network, token, and payment capabilities.
+x402 enables machine-to-machine USDT0 micropayments via HTTP 402.
+
+Examples:
+  - "Is x402 enabled?"
+  - "Show payment status"`,
+      inputSchema: z.object({}),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
+    },
+    async () => {
+      const info = getX402ClientInfo(x402Client)
+      const text = info.enabled
+        ? `x402 Payment Client: ACTIVE\nAddress: ${info.address}\nNetwork: ${info.network}\nProtocol: EIP-3009 transferWithAuthorization (gasless for payer)`
+        : 'x402 Payment Client: INACTIVE\nSet X402_NETWORK env var to enable (e.g., "eip155:42161" for Arbitrum)'
+      return {
+        content: [{ type: 'text', text }],
+        structuredContent: info
+      }
+    }
+  )
+}
+
+function tsentryX402Fetch (server) {
+  server.registerTool(
+    'tsentry_x402_fetch',
+    {
+      title: 'Tsentry x402 Paid Request',
+      description: `Make an HTTP request to an x402 payment-protected endpoint.
+
+Automatically handles HTTP 402 Payment Required responses by signing a USDT0 payment
+authorization and retrying. The payment uses EIP-3009 transferWithAuthorization
+(gasless — no on-chain gas needed from the payer).
+
+Requires x402 client to be configured (X402_NETWORK env var).
+
+Args:
+  - url (REQUIRED): The URL to fetch
+  - method (OPTIONAL): HTTP method (GET or POST), default GET
+  - body (OPTIONAL): JSON body for POST requests
+
+Examples:
+  - "Fetch data from https://api.example.com/premium"
+  - "Pay for access to the x402-protected API"`,
+      inputSchema: z.object({
+        url: z.string().url().describe('URL to fetch'),
+        method: z.enum(['GET', 'POST']).default('GET').describe('HTTP method'),
+        body: z.string().optional().describe('JSON body for POST requests')
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true }
+    },
+    async ({ url, method, body }) => {
+      try {
+        if (!x402Client) {
+          return { isError: true, content: [{ type: 'text', text: 'x402 client not configured — set X402_NETWORK and ETH_PRIVATE_KEY' }] }
+        }
+
+        const opts = { method: method || 'GET' }
+        if (body) {
+          opts.headers = { 'Content-Type': 'application/json' }
+          opts.body = body
+        }
+
+        const response = await x402Client.fetch(url, opts)
+        const data = await response.text()
+
+        let parsed
+        try { parsed = JSON.parse(data) } catch { parsed = null }
+
+        const text = `x402 Request: ${method || 'GET'} ${url}\nStatus: ${response.status}\nPayment: ${response.status === 402 ? 'FAILED (insufficient funds?)' : response.headers.get('x-payment-response') ? 'PAID' : 'Not required'}\n\nResponse:\n${parsed ? JSON.stringify(parsed, null, 2) : data.slice(0, 2000)}`
+
+        return {
+          content: [{ type: 'text', text }],
+          structuredContent: { status: response.status, data: parsed || data.slice(0, 5000) }
+        }
+      } catch (e) {
+        return { isError: true, content: [{ type: 'text', text: `x402 fetch error: ${e.message}` }] }
+      }
+    }
+  )
+}
+
 // ─── Register All Tools ───
 
 const tools = [
@@ -614,7 +724,9 @@ const tools = [
   tsentrySupply,
   tsentryWithdraw,
   tsentryOverview,
-  tsentryAskAi
+  tsentryAskAi,
+  tsentryX402Status,
+  tsentryX402Fetch
 ]
 
 server.registerTools(tools)
@@ -627,4 +739,4 @@ await server.connect(transport)
 console.error('[tsentry-mcp] Server running on stdio')
 console.error(`[tsentry-mcp] Chains: ${server.getChains().join(', ')}`)
 console.error(`[tsentry-mcp] Tokens: ${server.getRegisteredTokens('ethereum').join(', ')}`)
-console.error(`[tsentry-mcp] Custom tools: 9 Tsentry + ${WALLET_TOOLS.length + SWAP_TOOLS.length + BRIDGE_TOOLS.length + LENDING_TOOLS.length + PRICING_TOOLS.length + FIAT_TOOLS.length} WDK`)
+console.error(`[tsentry-mcp] Custom tools: 11 Tsentry + ${WALLET_TOOLS.length + SWAP_TOOLS.length + BRIDGE_TOOLS.length + LENDING_TOOLS.length + PRICING_TOOLS.length + FIAT_TOOLS.length} WDK`)

@@ -80,4 +80,33 @@ export const USDT_YIELD = {
   minUsdtReserve: 500            // always keep >= $500 USDT in wallet
 }
 
-export const STRATEGIES = { CONSERVATIVE, BALANCED, AGGRESSIVE, USDT_YIELD }
+/**
+ * Tether Diversified: spread across Tether ecosystem tokens
+ * - USDT (stablecoin) + USAt (T-Bills yield) + XAUt (gold hedge)
+ * - 60% lending (USDT/stablecoins via Aave)
+ * - 15% real-world assets (USAt for T-Bills yield, XAUt for gold exposure)
+ * - 10% liquidity
+ * - 15% reserve
+ */
+export const TETHER_DIVERSIFIED = {
+  name: 'Tether Diversified',
+  targetYield: 6,
+  maxRisk: 25,
+  allocations: {
+    lending: 60,
+    liquidity: 10,
+    reserve: 15,
+    rwa: 15  // real-world assets (USAt/XAUt)
+  },
+  rebalanceThreshold: 5,
+  baseCurrency: 'USDT',
+  consolidateToBase: false,
+  lendingPriority: ['USDT', 'USDC', 'DAI', 'WETH'],
+  // Tether ecosystem token awareness
+  tetherTokens: {
+    USAt: { type: 'tbills', description: 'Tether T-Bills — USD-denominated US Treasury yield' },
+    XAUt: { type: 'gold', description: 'Tether Gold — 1 troy ounce gold per token' }
+  }
+}
+
+export const STRATEGIES = { CONSERVATIVE, BALANCED, AGGRESSIVE, USDT_YIELD, TETHER_DIVERSIFIED }

@@ -3,6 +3,7 @@
 
 import WalletManagerEvm from '@tetherto/wdk-wallet-evm'
 import { ethers } from 'ethers'
+import { createErc4337Adapter } from './erc4337-adapter.js'
 
 const ERC20_ABI = [
   'function balanceOf(address) view returns (uint256)',
@@ -30,6 +31,9 @@ export class WdkWalletAdapter {
     // WDK objects
     this.wdkManager = null
     this.wdkAccount = null
+
+    // ERC-4337 Smart Account (optional — gasless transactions)
+    this.erc4337 = null
 
     // Derived ethers.js objects (for DeFi contract compatibility)
     this.provider = null
@@ -71,6 +75,21 @@ export class WdkWalletAdapter {
         `Address mismatch: WDK=${this.address} vs ethers=${this.signer.address}. ` +
         'This should not happen — check seed/derivation path.'
       )
+    }
+
+    // ERC-4337 Account Abstraction (optional — activated by ERC4337_BUNDLER_URL)
+    // Creates a Safe smart contract wallet for gasless transactions + batched ops
+    if (process.env.ERC4337_BUNDLER_URL) {
+      try {
+        const network = await this.provider.getNetwork()
+        this.erc4337 = await createErc4337Adapter(
+          this.seed, this.rpcUrl, Number(network.chainId)
+        )
+      } catch (e) {
+        // Non-fatal — ERC-4337 is an enhancement, not required
+        console.log(`[wdk] ERC-4337 init failed: ${e.message} — continuing without smart account`)
+        this.erc4337 = null
+      }
     }
 
     return this
@@ -215,7 +234,8 @@ export class WdkWalletAdapter {
       derivationPath: `m/44'/60'/${this.accountIndex}'/0/0`,
       address: this.address,
       rpcUrl: this.rpcUrl,
-      tokenCount: Object.keys(this.tokens).length
+      tokenCount: Object.keys(this.tokens).length,
+      erc4337: this.erc4337 ? this.erc4337.getInfo() : { enabled: false }
     }
   }
 
