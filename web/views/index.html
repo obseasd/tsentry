@@ -426,7 +426,7 @@
     .toast {
       padding: 0.65rem 1.1rem; border-radius: 10px; font-size: 0.78rem;
       font-family: inherit; font-weight: 500;
-      animation: toastIn 0.35s ease, toastOut 0.35s ease 2.7s forwards;
+      animation: toastIn 0.35s ease, toastOut 0.35s ease 5.5s forwards;
       max-width: 380px; box-shadow: var(--shadow);
       backdrop-filter: blur(8px);
     }
@@ -480,6 +480,66 @@
       header h1 { font-size: 1.2rem; }
       .controls { flex-wrap: wrap; gap: 0.35rem; }
     }
+    /* Reasoning Trail */
+    .reasoning-panel { border-color: #56d36422; border-top: 2px solid var(--green); }
+    .reasoning-panel:hover { border-color: #56d36444; }
+    .trail-step {
+      display: flex; flex-wrap: wrap; gap: 0.3rem 0.5rem; align-items: baseline;
+      padding: 0.4rem 0.5rem; margin: 0 -0.5rem; border-bottom: 1px solid #ffffff06;
+      border-radius: 4px; font-size: 0.75rem; transition: background 0.15s;
+    }
+    .trail-step > div { flex: 1 1 100%; word-break: break-word; overflow-wrap: anywhere; }
+    .trail-step:hover { background: #ffffff06; }
+    .trail-step .trail-ts { color: var(--muted-dim); font-size: 0.68rem; }
+    .trail-step .trail-phase {
+      font-weight: 600; font-size: 0.68rem; text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .trail-phase.start { color: var(--blue); }
+    .trail-phase.refresh { color: var(--muted); }
+    .trail-phase.evaluate { color: var(--pink); }
+    .trail-phase.plan { color: var(--purple); }
+    .trail-phase.execute { color: var(--yellow); }
+    .trail-phase.done { color: var(--green); }
+    .trail-phase.error { color: var(--red); }
+    .trail-phase.alert { color: var(--orange); }
+    .trail-phase.interval { color: var(--blue); }
+    .trail-phase.complete { color: var(--green-bright); }
+    .trail-phase.skip, .trail-phase.paused { color: var(--muted-dim); }
+    .trail-detail {
+      margin-top: 0.2rem; padding: 0.3rem 0.5rem; background: var(--bg-alt);
+      border-radius: 6px; font-size: 0.68rem; color: var(--muted);
+      border-left: 2px solid var(--border-light);
+      word-break: break-word; overflow-wrap: anywhere;
+    }
+    .trail-scroll { overflow: visible; }
+
+    /* Next check badge */
+    .next-check {
+      display: inline-flex; align-items: center; gap: 0.35rem;
+      font-size: 0.65rem; padding: 0.25rem 0.65rem; border-radius: 20px;
+      background: var(--blue-bg); border: 1px solid #58a6ff33;
+      color: var(--blue); font-weight: 500; transition: all 0.3s;
+    }
+    .next-check.soon { background: var(--yellow-bg); border-color: #d2992233; color: var(--yellow); }
+    .next-check .countdown { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+    /* WDK Module grid */
+    .module-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; }
+    .module-card {
+      padding: 0.6rem; border: 1px solid var(--border); border-radius: 8px;
+      transition: all 0.2s; text-align: center;
+    }
+    .module-card:hover { border-color: var(--border-light); background: #ffffff04; }
+    .module-card.active { border-color: #3fb95044; }
+    .module-card.inactive { opacity: 0.5; }
+    .module-card .mod-name { font-size: 0.7rem; font-weight: 600; color: var(--text-bright); }
+    .module-card .mod-pkg { font-size: 0.55rem; color: var(--muted-dim); margin-top: 0.15rem; word-break: break-all; }
+    .module-card .mod-status { font-size: 0.6rem; margin-top: 0.25rem; font-weight: 600; }
+    .module-card .mod-detail { font-size: 0.58rem; color: var(--muted); margin-top: 0.15rem; }
+    @media (max-width: 900px) { .module-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 600px) { .module-grid { grid-template-columns: 1fr 1fr; } .trail-step { grid-template-columns: 1fr; gap: 0.15rem; } }
+
     /* Donut chart container */
     .chart-wrap { position: relative; width: 140px; height: 140px; margin: 0 auto 0.5rem; }
     .chart-center {
@@ -502,6 +562,101 @@
     .log-entry .type-icon.llm { background: #f778ba15; color: var(--pink); }
     .log-entry .type-icon.nlp { background: var(--blue-bg); color: var(--blue); }
     .log-entry .type-icon.strategy { background: var(--blue-bg); color: var(--blue); }
+
+    /* Loading skeleton */
+    @keyframes shimmer {
+      0% { background-position: -400px 0; }
+      100% { background-position: 400px 0; }
+    }
+    .skeleton {
+      background: linear-gradient(90deg, var(--card) 25%, #1c2129 50%, var(--card) 75%);
+      background-size: 400px 100%;
+      animation: shimmer 1.5s ease-in-out infinite;
+      border-radius: 6px;
+    }
+    .skeleton-line { height: 14px; margin-bottom: 8px; border-radius: 4px; }
+    .skeleton-line.w60 { width: 60%; }
+    .skeleton-line.w80 { width: 80%; }
+    .skeleton-line.w40 { width: 40%; }
+    .skeleton-block { height: 48px; border-radius: 8px; }
+
+    /* Loading overlay for buttons */
+    button.loading {
+      position: relative;
+      pointer-events: none;
+      opacity: 0.7;
+    }
+    button.loading::after {
+      content: '';
+      position: absolute; inset: 0;
+      border-radius: inherit;
+      background: repeating-linear-gradient(
+        -45deg, transparent, transparent 5px,
+        rgba(255,255,255,0.03) 5px, rgba(255,255,255,0.03) 10px
+      );
+      animation: shimmer 1s linear infinite;
+    }
+
+    /* Section group */
+    .section-group {
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.25rem;
+      margin-bottom: 1.25rem;
+    }
+    .section-group-title {
+      font-size: 0.65rem;
+      color: var(--muted-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .section-group > :last-child { margin-bottom: 0 !important; }
+
+    /* Mainnet-required overlay */
+    .mainnet-required {
+      position: relative;
+      opacity: 0.45;
+      pointer-events: none;
+    }
+    .mainnet-required::after {
+      content: 'MAINNET REQUIRED';
+      position: absolute; top: 12px; right: 12px;
+      font-size: 0.55rem; font-weight: 700; letter-spacing: 0.06em;
+      color: var(--muted-dim); background: var(--bg);
+      padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border);
+    }
+    .mainnet-required.active-mainnet {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .mainnet-required.active-mainnet::after { display: none; }
+
+    /* Network badge */
+    .network-badge {
+      display: inline-flex; align-items: center; gap: 0.35rem;
+      font-size: 0.62rem; padding: 3px 10px; border-radius: 6px;
+      border: 1px solid var(--border); background: var(--card);
+      font-weight: 500;
+    }
+    .net-dot {
+      width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+      flex-shrink: 0;
+    }
+    .network-badge.testnet { color: var(--muted-dim); }
+    .network-badge.testnet .net-dot { opacity: 0.5; }
+    .network-badge.mainnet { color: var(--text-bright); border-color: var(--green); background: #161b22; }
+    .network-badge.mainnet .net-dot { box-shadow: 0 0 6px currentColor; }
+
+    /* No-liquidity swap dim */
+    .swap-no-liquidity { opacity: 0.5; }
+    .swap-no-liquidity .quick-form { pointer-events: none; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 </head>
@@ -515,41 +670,47 @@
         <h1>Tsentry</h1>
         <div class="header-sep"></div>
         <span class="badge idle" id="statusBadge">loading</span>
-        <span class="badge" id="wdkBadge" style="display:none;background:#3fb95012;color:var(--green);border:1px solid #3fb95033;font-size:0.6rem">WDK</span>
-        <span class="badge" id="erc4337Badge" style="display:none;background:#bc8cff12;color:var(--purple);border:1px solid #bc8cff33;font-size:0.6rem">ERC-4337</span>
         <span class="badge" id="x402Badge" style="display:none;background:#f0883e12;color:var(--orange);border:1px solid #f0883e33;font-size:0.6rem">x402</span>
+        <span class="next-check" id="nextCheckBadge" style="display:none">
+          <span>Next:</span><span class="countdown" id="nextCheckCountdown">—</span>
+        </span>
         <span style="font-size:0.72rem;color:var(--muted-dim);letter-spacing:0.02em" id="walletAddr"></span>
+        <span class="network-badge testnet" id="networkBadge" style="display:none">
+          <span class="net-dot" id="networkDot"></span>
+          <span id="networkName">—</span>
+        </span>
       </div>
       <div class="controls">
-        <button onclick="doRefresh()" data-tip-below="Reload balances & prices from blockchain">Refresh</button>
-        <button onclick="doCycle()" data-tip-below="Run one AI evaluation + execute actions">Run Cycle</button>
-        <button class="primary" onclick="doStart()" id="btnStart" data-tip-below="Start auto-loop (evaluates every 60s)">Start Agent</button>
-        <button onclick="doPause()" id="btnPause" data-tip-below="Toggle pause — evaluates but won't execute">Pause</button>
-        <button class="danger" onclick="doStop()" data-tip-below="Stop the auto-loop completely">Stop</button>
+        <button onclick="doRefresh()" id="btnRefresh" title="Fetch latest balances, prices &amp; Aave positions from blockchain (read-only, no gas)">&#x21bb; Refresh Data</button>
+        <button onclick="doCycle()" id="btnCycle" title="Run one full AI cycle: fetch state → LLM analysis → propose actions → execute. Manual trigger.">&#x25B6; Run 1 Cycle</button>
+        <button class="primary" onclick="doStart()" id="btnStart" title="Start autonomous loop: the agent will automatically run cycles every 60s, analyzing state and executing actions on its own.">&#x23F5; Start Auto</button>
+        <button onclick="doPause()" id="btnPause" title="Pause: agent keeps evaluating but won't execute any on-chain actions. Toggle to resume.">&#x23F8; Pause</button>
+        <button class="danger" onclick="doStop()" id="btnStop" title="Fully stop the autonomous loop. Agent becomes idle until manually started again.">&#x23F9; Stop</button>
       </div>
     </header>
 
     <!-- Top KPIs -->
-    <div class="grid-top">
+    <div class="grid-top" id="kpiGrid">
       <div class="card kpi-portfolio">
         <h3>Total Portfolio</h3>
-        <div class="value" id="totalValue">$0.00</div>
-        <div class="sub" id="totalSub">—</div>
+        <div class="value" id="totalValue"><div class="skeleton skeleton-line w60" style="height:24px;margin-top:4px"></div></div>
+        <div class="sub" id="totalSub"><div class="skeleton skeleton-line w40" style="height:10px"></div></div>
       </div>
       <div class="card kpi-wallet">
         <h3>Wallet Balance</h3>
-        <div class="value sm" id="walletValue">$0.00</div>
-        <div class="sub" id="walletSub">—</div>
+        <div class="value sm" id="walletValue"><div class="skeleton skeleton-line w60" style="height:20px;margin-top:4px"></div></div>
+        <div class="sub" id="walletSub"><div class="skeleton skeleton-line w40" style="height:10px"></div></div>
       </div>
       <div class="card kpi-supplied">
         <h3>Aave Supplied</h3>
-        <div class="value sm" id="suppliedValue">$0.00</div>
-        <div class="sub" id="suppliedSub">—</div>
+        <div class="value sm" id="suppliedValue"><div class="skeleton skeleton-line w60" style="height:20px;margin-top:4px"></div></div>
+        <div class="sub" id="suppliedSub"><div class="skeleton skeleton-line w40" style="height:10px"></div></div>
+        <div class="sub" id="suppliedAPY" style="color:var(--green);font-weight:600;margin-top:2px"></div>
       </div>
       <div class="card kpi-health">
         <h3>Health Factor</h3>
-        <div class="value sm" id="healthFactor">—</div>
-        <div class="sub" id="healthSub">No borrows</div>
+        <div class="value sm" id="healthFactor"><div class="skeleton skeleton-line w40" style="height:20px;margin-top:4px"></div></div>
+        <div class="sub" id="healthSub"><div class="skeleton skeleton-line w60" style="height:10px"></div></div>
       </div>
     </div>
 
@@ -558,7 +719,7 @@
       <div class="card">
         <h3>Token Balances</h3>
         <table class="bal-table">
-          <thead><tr><th>Token</th><th>Location</th><th>Amount</th><th>Value</th></tr></thead>
+          <thead><tr><th>Token</th><th>Location</th><th>Amount</th><th>Value</th><th>APY</th></tr></thead>
           <tbody id="balanceRows"></tbody>
         </table>
       </div>
@@ -596,9 +757,9 @@
     </div>
 
     <!-- Middle: Swap -->
-    <div class="grid-main">
+    <div class="grid-main" id="swapSection">
       <div class="card">
-        <h3>Swap <span id="swapProviderBadge" class="badge" style="font-size:0.6rem;margin-left:0.5rem;background:var(--purple-bg);color:var(--purple);border:1px solid #bc8cff33">Uniswap V3</span></h3>
+        <h3>Swap <span id="swapProviderBadge" class="badge" style="font-size:0.6rem;margin-left:0.5rem;background:var(--purple-bg);color:var(--purple);border:1px solid #bc8cff33">Uniswap V3</span> <span id="swapNoLiqBadge" style="display:none;font-size:0.6rem;color:var(--muted-dim);margin-left:0.3rem">No liquidity on testnet</span></h3>
         <div class="quick-form" style="flex-direction:column;gap:0.75rem">
           <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
             <select id="swapIn"><option>USDT</option><option>DAI</option><option>USDC</option><option>WETH</option></select>
@@ -662,8 +823,148 @@
       </div>
     </div>
 
-    <!-- x402 Agentic Payments -->
+    <!-- Transaction History -->
     <div class="grid-main">
+      <div class="card" style="grid-column: span 2">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
+          <h3 style="margin:0">Transaction History</h3>
+          <span id="historyBadge" style="font-size:0.6rem;color:var(--muted)">WDK Indexer</span>
+        </div>
+        <div id="historyContent" style="max-height:240px;overflow-y:auto">
+          <div style="font-size:0.8rem;color:var(--muted)">Loading...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ AGENT INTELLIGENCE ═══ -->
+    <div class="section-group">
+      <div class="section-group-title">
+        <span>&#129504;</span> Agent Intelligence — Command, Automate, Reason
+      </div>
+
+      <!-- Command Center -->
+      <div class="card cmd-center" style="margin-bottom:1rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
+          <div style="display:flex;align-items:center;gap:0.5rem">
+            <span style="font-size:1rem">&#9889;</span>
+            <h3 style="margin:0">Command Center</h3>
+            <span style="font-size:0.6rem;color:var(--muted-dim);letter-spacing:0.03em">Natural Language Control</span>
+          </div>
+          <span style="font-size:0.62rem;color:var(--muted-dim)" id="cmdSource"></span>
+        </div>
+        <div class="cmd-bar">
+          <input type="text" id="cmdInput" placeholder="Type a command: &quot;supply 50 USDT&quot;, &quot;swap 100 USDT to WETH&quot;, &quot;what's my portfolio?&quot;">
+          <button onclick="runCommand()" id="cmdBtn">Execute</button>
+        </div>
+        <div class="cmd-hints">
+          <span class="cmd-hint" onclick="fillCmd('supply 50 USDT')">supply 50 USDT</span>
+          <span class="cmd-hint" onclick="fillCmd('withdraw all DAI')">withdraw all DAI</span>
+          <span class="cmd-hint" onclick="fillCmd('swap 100 USDT to WETH')">swap 100 USDT to WETH</span>
+          <span class="cmd-hint" onclick="fillCmd('bridge 50 to arbitrum')">bridge 50 to arbitrum</span>
+          <span class="cmd-hint" onclick="fillCmd('set strategy aggressive')">strategy aggressive</span>
+          <span class="cmd-hint" onclick="fillCmd('start')">start agent</span>
+          <span class="cmd-hint" onclick="fillCmd('What is my health factor?')">ask AI</span>
+          <span class="cmd-hint" onclick="fillRule('if APR drops by 5% from now, withdraw all and convert to USDT'); document.getElementById('ruleInput').scrollIntoView({behavior:'smooth'})">+ rule</span>
+        </div>
+        <div id="cmdResult"></div>
+      </div>
+
+      <!-- Conditional Rules -->
+      <div class="card rules-panel" style="margin-bottom:1rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
+          <div style="display:flex;align-items:center;gap:0.5rem">
+            <span style="font-size:1rem">&#9881;</span>
+            <h3 style="margin:0">Conditional Rules</h3>
+            <span style="font-size:0.6rem;color:var(--muted-dim);letter-spacing:0.03em">AI-Parsed Automation</span>
+          </div>
+          <span style="font-size:0.65rem;color:var(--muted)" id="rulesCount">0 rules</span>
+        </div>
+        <div class="rule-bar">
+          <input type="text" id="ruleInput" placeholder="Describe a rule: &quot;if APR drops by 5%, withdraw all and convert to USDT&quot;">
+          <button onclick="createRule()" id="ruleBtn">Create Rule</button>
+        </div>
+        <div class="rule-examples">
+          <span class="rule-example" onclick="fillRule('if APR drops by 5% from now, withdraw all from lending and convert to USDT')">APR drop guard</span>
+          <span class="rule-example" onclick="fillRule('put 60 USDT in Aave lending, if health factor drops below 1.3 withdraw everything')">safe lending</span>
+          <span class="rule-example" onclick="fillRule('if ETH price drops below $2000, swap all WETH to USDT')">ETH hedge</span>
+          <span class="rule-example" onclick="fillRule('if USDT balance exceeds 500, supply the excess to Aave')">auto-supply</span>
+        </div>
+        <div id="rulesList" style="margin-top:0.75rem"></div>
+        <div id="ruleResult"></div>
+      </div>
+
+      <!-- AI Reasoning Engine -->
+      <div class="card llm-panel" style="margin-bottom:1rem">
+        <div class="llm-header">
+          <div class="llm-status">
+            <div class="llm-dot off" id="llmDot"></div>
+            <h3 style="margin:0">AI Reasoning Engine</h3>
+            <span style="font-size:0.62rem;color:var(--muted-dim);letter-spacing:0.03em" id="llmModel">—</span>
+          </div>
+          <div style="display:flex;gap:0.6rem;align-items:center">
+            <span style="font-size:0.62rem;color:var(--muted-dim)" id="llmLatency"></span>
+            <button onclick="toggleLlm()" id="btnLlm" title="Toggle AI reasoning — off = rule-based fallback only" style="padding:0.35rem 0.75rem;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--muted);cursor:pointer;font-family:inherit;font-size:0.7rem;font-weight:500;transition:all 0.2s">Enable</button>
+          </div>
+        </div>
+        <div id="llmContent">
+          <div style="color:var(--muted);font-size:0.8rem">LLM reasoning not yet active. Enable it or run a cycle to see AI analysis.</div>
+        </div>
+        <div class="llm-ask">
+          <input type="text" id="llmInstruction" placeholder="Ask AI: e.g. 'Should I move more to lending?' or 'Analyze ETH exposure'">
+          <button onclick="askLlm()">Ask AI</button>
+        </div>
+      </div>
+
+      <!-- Reasoning Trail -->
+      <div class="card reasoning-panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
+          <div style="display:flex;align-items:center;gap:0.5rem">
+            <span style="font-size:1rem">&#128065;</span>
+            <h3 style="margin:0">Reasoning Trail</h3>
+            <span style="font-size:0.6rem;color:var(--muted-dim);letter-spacing:0.03em">Step-by-Step Decision Process</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:0.75rem">
+            <span style="font-size:0.62rem;color:var(--muted)" id="trailCycle"></span>
+            <span style="font-size:0.62rem;color:var(--muted)" id="trailInterval"></span>
+          </div>
+        </div>
+        <div class="trail-scroll" id="trailContent">
+          <div style="color:var(--muted);font-size:0.8rem">Run a cycle to see the agent's step-by-step reasoning.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom: Log + Prices -->
+    <div class="grid-bottom">
+      <div class="card">
+        <h3>Agent Log</h3>
+        <div id="logEntries">
+          <div style="color:var(--muted);font-size:0.8rem">No actions yet.</div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Live Prices</h3>
+        <div id="priceList"></div>
+        <div style="margin-top:1.25rem">
+          <h3>Agent Info</h3>
+          <div style="font-size:0.75rem;color:var(--muted);display:flex;flex-direction:column;gap:0.35rem;margin-top:0.25rem">
+            <div style="display:flex;justify-content:space-between"><span>Cycle</span><span style="color:var(--text)" id="cycleCount">0</span></div>
+            <div style="display:flex;justify-content:space-between"><span>Uptime</span><span style="color:var(--text)" id="uptime">—</span></div>
+            <div style="display:flex;justify-content:space-between"><span>ETH Gas</span><span style="color:var(--text)" id="ethBal">—</span></div>
+            <div style="display:flex;justify-content:space-between"><span>DEX Provider</span><span style="color:var(--text)" id="swapProviderStatus">—</span></div>
+            <div style="display:flex;justify-content:space-between"><span>Smart Account</span><span style="color:var(--text)" id="erc4337Status">—</span></div>
+            <div style="display:flex;justify-content:space-between"><span>x402 Payments</span><span style="color:var(--text)" id="x402Status">—</span></div>
+          </div>
+        </div>
+        <div style="margin-top:1.25rem">
+          <h3>WDK Modules <span class="badge" id="wdkModuleCount" style="font-size:0.6rem;margin-left:0.5rem;background:var(--blue-bg);color:var(--blue);border:1px solid #58a6ff33">7/8</span></h3>
+          <div style="display:flex;gap:0.3rem;flex-wrap:wrap;margin-top:0.4rem" id="wdkModuleList"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- x402 Agentic Payments -->
+    <div class="grid-main mainnet-required" id="x402Wrapper" style="margin-top:1.25rem">
       <div class="card" style="grid-column: span 2">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
           <div style="display:flex;align-items:center;gap:0.5rem">
@@ -734,124 +1035,18 @@
       </div>
     </div>
 
-    <!-- Transaction History -->
-    <div class="grid-main">
-      <div class="card" style="grid-column: span 2">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
-          <h3 style="margin:0">Transaction History</h3>
-          <span id="historyBadge" style="font-size:0.6rem;color:var(--muted)">WDK Indexer</span>
-        </div>
-        <div id="historyContent" style="max-height:240px;overflow-y:auto">
-          <div style="font-size:0.8rem;color:var(--muted)">Loading...</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Natural Language Command Center -->
-    <div style="margin-bottom:1.25rem">
-      <div class="card cmd-center">
+    <!-- WDK Integration Panel (8/8 modules) -->
+    <div style="margin-top:1.25rem;margin-bottom:1.25rem">
+      <div class="card" style="border-color:#58a6ff22;border-top:2px solid var(--blue)">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
           <div style="display:flex;align-items:center;gap:0.5rem">
-            <span style="font-size:1rem">&#9889;</span>
-            <h3 style="margin:0">Command Center</h3>
-            <span style="font-size:0.6rem;color:var(--muted-dim);letter-spacing:0.03em">Natural Language Control</span>
+            <span style="font-size:1rem">&#128268;</span>
+            <h3 style="margin:0">Tether WDK Integration</h3>
+            <span class="badge" id="wdkTotalBadge" style="font-size:0.6rem;background:var(--green-bg);color:var(--green);border:1px solid #3fb95033">8/8</span>
           </div>
-          <span style="font-size:0.62rem;color:var(--muted-dim)" id="cmdSource"></span>
+          <span style="font-size:0.62rem;color:var(--muted-dim)">Wallet Development Kit</span>
         </div>
-        <div class="cmd-bar">
-          <input type="text" id="cmdInput" placeholder="Type a command: &quot;supply 50 USDT&quot;, &quot;swap 100 USDT to WETH&quot;, &quot;what's my portfolio?&quot;">
-          <button onclick="runCommand()" id="cmdBtn">Execute</button>
-        </div>
-        <div class="cmd-hints">
-          <span class="cmd-hint" onclick="fillCmd('supply 50 USDT')">supply 50 USDT</span>
-          <span class="cmd-hint" onclick="fillCmd('withdraw all DAI')">withdraw all DAI</span>
-          <span class="cmd-hint" onclick="fillCmd('swap 100 USDT to WETH')">swap 100 USDT to WETH</span>
-          <span class="cmd-hint" onclick="fillCmd('bridge 50 to arbitrum')">bridge 50 to arbitrum</span>
-          <span class="cmd-hint" onclick="fillCmd('set strategy aggressive')">strategy aggressive</span>
-          <span class="cmd-hint" onclick="fillCmd('start')">start agent</span>
-          <span class="cmd-hint" onclick="fillCmd('What is my health factor?')">ask AI</span>
-          <span class="cmd-hint" onclick="fillRule('if APR drops by 5% from now, withdraw all and convert to USDT'); document.getElementById('ruleInput').scrollIntoView({behavior:'smooth'})">+ rule</span>
-        </div>
-        <div id="cmdResult"></div>
-      </div>
-    </div>
-
-    <!-- Conditional Rules -->
-    <div style="margin-bottom:1.25rem">
-      <div class="card rules-panel">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
-          <div style="display:flex;align-items:center;gap:0.5rem">
-            <span style="font-size:1rem">&#9881;</span>
-            <h3 style="margin:0">Conditional Rules</h3>
-            <span style="font-size:0.6rem;color:var(--muted-dim);letter-spacing:0.03em">AI-Parsed Automation</span>
-          </div>
-          <span style="font-size:0.65rem;color:var(--muted)" id="rulesCount">0 rules</span>
-        </div>
-        <div class="rule-bar">
-          <input type="text" id="ruleInput" placeholder="Describe a rule: &quot;if APR drops by 5%, withdraw all and convert to USDT&quot;">
-          <button onclick="createRule()" id="ruleBtn">Create Rule</button>
-        </div>
-        <div class="rule-examples">
-          <span class="rule-example" onclick="fillRule('if APR drops by 5% from now, withdraw all from lending and convert to USDT')">APR drop guard</span>
-          <span class="rule-example" onclick="fillRule('put 60 USDT in Aave lending, if health factor drops below 1.3 withdraw everything')">safe lending</span>
-          <span class="rule-example" onclick="fillRule('if ETH price drops below $2000, swap all WETH to USDT')">ETH hedge</span>
-          <span class="rule-example" onclick="fillRule('if USDT balance exceeds 500, supply the excess to Aave')">auto-supply</span>
-        </div>
-        <div id="rulesList" style="margin-top:0.75rem"></div>
-        <div id="ruleResult"></div>
-      </div>
-    </div>
-
-    <!-- LLM Reasoning -->
-    <div class="grid-main" style="margin-bottom:1.25rem">
-      <div class="card llm-panel" style="grid-column: span 2">
-        <div class="llm-header">
-          <div class="llm-status">
-            <div class="llm-dot off" id="llmDot"></div>
-            <h3 style="margin:0">AI Reasoning Engine</h3>
-            <span style="font-size:0.62rem;color:var(--muted-dim);letter-spacing:0.03em" id="llmModel">—</span>
-          </div>
-          <div style="display:flex;gap:0.6rem;align-items:center">
-            <span style="font-size:0.62rem;color:var(--muted-dim)" id="llmLatency"></span>
-            <button onclick="toggleLlm()" id="btnLlm" data-tip="Toggle AI reasoning — off = rule-based fallback only" style="padding:0.35rem 0.75rem;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--muted);cursor:pointer;font-family:inherit;font-size:0.7rem;font-weight:500;transition:all 0.2s">Enable</button>
-          </div>
-        </div>
-        <div id="llmContent">
-          <div style="color:var(--muted);font-size:0.8rem">LLM reasoning not yet active. Enable it or run a cycle to see AI analysis.</div>
-        </div>
-        <div class="llm-ask">
-          <input type="text" id="llmInstruction" placeholder="Ask AI: e.g. 'Should I move more to lending?' or 'Analyze ETH exposure'">
-          <button onclick="askLlm()">Ask AI</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Bottom: Log + Prices -->
-    <div class="grid-bottom">
-      <div class="card">
-        <h3>Agent Log</h3>
-        <div class="log-scroll" id="logEntries">
-          <div style="color:var(--muted);font-size:0.8rem">No actions yet.</div>
-        </div>
-      </div>
-      <div class="card">
-        <h3>Live Prices</h3>
-        <div id="priceList"></div>
-        <div style="margin-top:1.25rem">
-          <h3>Agent Info</h3>
-          <div style="font-size:0.75rem;color:var(--muted);display:flex;flex-direction:column;gap:0.35rem;margin-top:0.25rem">
-            <div style="display:flex;justify-content:space-between"><span>Cycle</span><span style="color:var(--text)" id="cycleCount">0</span></div>
-            <div style="display:flex;justify-content:space-between"><span>Uptime</span><span style="color:var(--text)" id="uptime">—</span></div>
-            <div style="display:flex;justify-content:space-between"><span>ETH Gas</span><span style="color:var(--text)" id="ethBal">—</span></div>
-            <div style="display:flex;justify-content:space-between"><span>DEX Provider</span><span style="color:var(--text)" id="swapProviderStatus">—</span></div>
-            <div style="display:flex;justify-content:space-between"><span>Smart Account</span><span style="color:var(--text)" id="erc4337Status">—</span></div>
-            <div style="display:flex;justify-content:space-between"><span>x402 Payments</span><span style="color:var(--text)" id="x402Status">—</span></div>
-          </div>
-        </div>
-        <div style="margin-top:1.25rem">
-          <h3>WDK Modules <span class="badge" id="wdkModuleCount" style="font-size:0.6rem;margin-left:0.5rem;background:var(--blue-bg);color:var(--blue);border:1px solid #58a6ff33">7/8</span></h3>
-          <div style="display:flex;gap:0.3rem;flex-wrap:wrap;margin-top:0.4rem" id="wdkModuleList"></div>
-        </div>
+        <div class="module-grid" id="moduleGrid"></div>
       </div>
     </div>
 
@@ -918,18 +1113,23 @@
       const opts = { method, headers: { 'Content-Type': 'application/json' } };
       if (body) opts.body = JSON.stringify(body);
       const r = await fetch(path, opts);
-      return r.json();
+      if (!r.ok && r.status === 429) { toast('Rate limited — slow down', 'warning'); }
+      const data = await r.json();
+      if (data.error && method !== 'GET') { toast(data.error, 'error'); }
+      return data;
     }
 
     async function refresh() {
       try {
-        const [status, portfolio, actions, swapData, bridgeData, llmData] = await Promise.all([
+        const [status, portfolio, actions, swapData, bridgeData, llmData, reasoningData, modulesData] = await Promise.all([
           api('GET', '/api/status'),
           api('GET', '/api/portfolio'),
           api('GET', '/api/actions?limit=80'),
           api('GET', '/api/swap/pairs'),
           api('GET', '/api/bridge/chains'),
-          api('GET', '/api/llm')
+          api('GET', '/api/llm'),
+          api('GET', '/api/reasoning'),
+          api('GET', '/api/modules')
         ]);
 
         // Status badge
@@ -938,37 +1138,53 @@
         else if (status.paused) { badge.textContent = 'paused'; badge.className = 'badge paused'; }
         else { badge.textContent = 'idle'; badge.className = 'badge idle'; }
 
-        // Wallet address + WDK badge
+        // Wallet address
         if (status.address) {
           document.getElementById('walletAddr').textContent =
             status.address.slice(0, 6) + '...' + status.address.slice(-4);
         }
-        const wdkBadge = document.getElementById('wdkBadge');
-        if (status.walletSource === 'wdk') {
-          wdkBadge.style.display = '';
-          wdkBadge.title = status.wdkInfo ? `${status.wdkInfo.derivationPath}` : 'WDK Wallet';
-        } else {
-          wdkBadge.style.display = 'none';
-        }
 
-        // ERC-4337 badge
-        const erc4337Badge = document.getElementById('erc4337Badge');
+        // ERC-4337 info (used later but no header badge)
         const erc4337Info = status.wdkInfo?.erc4337;
-        if (erc4337Info?.enabled) {
-          erc4337Badge.style.display = '';
-          erc4337Badge.title = `Smart Account: ${erc4337Info.smartAddress?.slice(0,8)}... (${erc4337Info.mode} mode)`;
-        } else {
-          erc4337Badge.style.display = 'none';
+
+        // Network badge (colored dot: mainnet = chain color, testnet = grey)
+        const netBadge = document.getElementById('networkBadge');
+        const netDot = document.getElementById('networkDot');
+        const netName = document.getElementById('networkName');
+        if (status.chain) {
+          netBadge.style.display = '';
+          const isMainnet = status.chain.type === 'mainnet';
+          netBadge.className = `network-badge ${isMainnet ? 'mainnet' : 'testnet'}`;
+          // Chain-specific dot colors
+          const chainColors = {
+            'Base Sepolia': '#0052FF', 'Base': '#0052FF',
+            'Sepolia': '#627EEA', 'Ethereum Mainnet': '#627EEA',
+            'Arbitrum One': '#28A0F0'
+          };
+          netDot.style.background = chainColors[status.chain.name] || '#627EEA';
+          netName.textContent = isMainnet ? status.chain.name : `${status.chain.name} testnet`;
+
+          // Toggle mainnet-required sections
+          const x402Wrap = document.getElementById('x402Wrapper');
+          if (x402Wrap) x402Wrap.classList.toggle('active-mainnet', isMainnet);
+
+          // Swap: show no-liquidity badge on testnet (no Velora)
+          const swapNoLiq = document.getElementById('swapNoLiqBadge');
+          if (!isMainnet && status.swapProvider !== 'velora') {
+            swapNoLiq.style.display = '';
+          } else {
+            swapNoLiq.style.display = 'none';
+          }
         }
 
         // x402 badge + status + section
         const x402Badge = document.getElementById('x402Badge');
         fetch('/api/x402').then(r => r.json()).then(x402 => {
+          const x402Wrap = document.getElementById('x402Wrapper');
           if (x402.enabled) {
             x402Badge.style.display = '';
             x402Badge.title = `x402: ${x402.network} — ${x402.routes?.length || 0} gated routes`;
             document.getElementById('x402Status').innerHTML = `<span style="color:var(--orange)">Active</span> <span style="color:var(--muted-dim)">(${x402.network})</span>`;
-            // Update x402 section
             document.getElementById('x402SectionStatus').innerHTML = `<span style="color:var(--green)">ACTIVE</span>`;
             document.getElementById('x402SectionBadge').style.background = '#3fb95015';
             document.getElementById('x402SectionBadge').style.color = 'var(--green)';
@@ -978,10 +1194,11 @@
             if (x402.tokenAddress) {
               document.getElementById('x402Token').textContent = `USDT0 (${x402.tokenAddress.slice(0,6)}…${x402.tokenAddress.slice(-4)})`;
             }
+            if (x402Wrap) x402Wrap.classList.add('active-mainnet');
           } else {
             x402Badge.style.display = 'none';
             document.getElementById('x402Status').textContent = 'Inactive';
-            document.getElementById('x402SectionStatus').innerHTML = `<span style="color:var(--muted)">INACTIVE</span> <span style="color:var(--muted-dim);font-size:0.6rem">Set X402_NETWORK to enable</span>`;
+            document.getElementById('x402SectionStatus').innerHTML = `<span style="color:var(--muted)">INACTIVE</span> <span style="color:var(--muted-dim);font-size:0.6rem">Mainnet only (USDT0)</span>`;
             document.getElementById('x402Network').textContent = 'Not configured';
             document.getElementById('x402Facilitator').textContent = '—';
           }
@@ -1077,6 +1294,26 @@
         document.getElementById('suppliedSub').textContent = Object.entries(portfolio.supplied || {})
           .filter(([,v]) => v > 0).map(([k,v]) => `${v.toFixed(1)} ${k}`).join(', ') || 'Nothing supplied';
 
+        // Weighted average APY across supplied tokens
+        const apys = portfolio.aaveAPYs || {};
+        let weightedAPY = 0, totalWeight = 0;
+        for (const [sym, amt] of Object.entries(portfolio.supplied || {})) {
+          if (amt > 0 && apys[sym]) {
+            weightedAPY += apys[sym].supplyAPY * amt;
+            totalWeight += amt;
+          }
+        }
+        const avgAPY = totalWeight > 0 ? weightedAPY / totalWeight : 0;
+        const apyEl = document.getElementById('suppliedAPY');
+        if (avgAPY > 0) {
+          apyEl.textContent = `APY: ${avgAPY.toFixed(2)}%`;
+        } else if (suppliedTotal > 0) {
+          apyEl.textContent = 'APY: loading...';
+          apyEl.style.color = 'var(--muted)';
+        } else {
+          apyEl.textContent = '';
+        }
+
         // Health factor
         const hf = portfolio.aaveAccount?.healthFactor;
         const hfEl = document.getElementById('healthFactor');
@@ -1095,23 +1332,28 @@
         for (const [sym, amt] of Object.entries(portfolio.balances || {})) {
           if (amt > 0.0001) {
             const price = portfolio.prices?.[sym]?.usd || (['USDT','DAI','USDC'].includes(sym) ? 1 : 0);
-            rows.push({ sym, amt, loc: 'wallet', val: amt * price });
+            rows.push({ sym, amt, loc: 'wallet', val: amt * price, apy: null });
           }
         }
         for (const [sym, amt] of Object.entries(portfolio.supplied || {})) {
           if (amt > 0.0001) {
-            rows.push({ sym: `a${sym}`, amt, loc: 'supplied', val: amt });
+            const tokenAPY = apys[sym]?.supplyAPY || 0;
+            rows.push({ sym: `a${sym}`, amt, loc: 'supplied', val: amt, apy: tokenAPY });
           }
         }
         rows.sort((a, b) => b.val - a.val);
-        document.getElementById('balanceRows').innerHTML = rows.map(r => `
-          <tr>
+        document.getElementById('balanceRows').innerHTML = rows.map(r => {
+          const apyCell = r.apy !== null && r.apy > 0
+            ? `<span style="color:var(--green);font-weight:600">${r.apy.toFixed(2)}%</span>`
+            : r.loc === 'supplied' ? '<span style="color:var(--muted)">—</span>' : '';
+          return `<tr>
             <td><b>${r.sym}</b></td>
             <td><span class="tag ${r.loc}">${r.loc}</span></td>
             <td>${r.amt < 0.01 ? r.amt.toFixed(6) : r.amt.toFixed(2)}</td>
             <td>$${r.val.toFixed(2)}</td>
-          </tr>
-        `).join('');
+            <td>${apyCell}</td>
+          </tr>`;
+        }).join('');
 
         // Allocation bar
         const totalAll = walletStable + suppliedTotal;
@@ -1203,14 +1445,17 @@
           }).join('');
         }
 
-        // Swap pairs
+        // Swap pairs + no-liquidity state
         const pairsEl = document.getElementById('swapPairs');
+        const swapSec = document.getElementById('swapSection');
         if (swapData.pairs?.length > 0) {
           pairsEl.innerHTML = swapData.pairs.map(p =>
             `<span class="tag wallet" style="margin:0.15rem 0">${p.tokenA}/${p.tokenB} <span style="color:var(--muted);font-size:0.6rem">${p.fee / 10000}%</span></span>`
           ).join('');
+          swapSec.classList.remove('swap-no-liquidity');
         } else {
-          pairsEl.innerHTML = '<span style="color:var(--muted);font-size:0.8rem">No pairs found</span>';
+          pairsEl.innerHTML = '<span style="color:var(--muted);font-size:0.8rem">No liquidity pools available on this network</span>';
+          swapSec.classList.add('swap-no-liquidity');
         }
 
         // Swap history (from action log)
@@ -1240,6 +1485,15 @@
           ).join('');
         }
 
+        // Reasoning Trail
+        if (reasoningData) renderReasoningTrail(reasoningData);
+
+        // Next Check badge
+        renderNextCheck(reasoningData?.nextCheck, status.active);
+
+        // WDK Modules grid
+        if (modulesData) renderModuleGrid(modulesData);
+
         // LLM state
         if (llmData) renderLlmState(llmData);
       } catch (e) {
@@ -1259,7 +1513,7 @@
       el.className = `toast ${type}`;
       el.textContent = msg;
       document.getElementById('toasts').appendChild(el);
-      setTimeout(() => el.remove(), 3200);
+      setTimeout(() => el.remove(), 6200);
     }
 
     async function setStrategy(key) {
@@ -1268,28 +1522,49 @@
       await refresh();
     }
 
-    async function doRefresh() { await api('POST', '/api/refresh'); toast('Balances refreshed', 'info'); await refresh(); }
+    function btnLoading(id, loading) {
+      const btn = document.getElementById(id);
+      if (!btn) return;
+      if (loading) { btn.classList.add('loading'); btn.disabled = true; }
+      else { btn.classList.remove('loading'); btn.disabled = false; }
+    }
+
+    async function doRefresh() {
+      btnLoading('btnRefresh', true);
+      try { await api('POST', '/api/refresh'); toast('Balances refreshed', 'info'); await refresh(); }
+      catch (e) { toast('Refresh failed: ' + e.message, 'error'); }
+      finally { btnLoading('btnRefresh', false); }
+    }
     async function doCycle() {
+      btnLoading('btnCycle', true);
       toast('Running cycle...', 'info');
-      const res = await api('POST', '/api/cycle');
-      const n = res.snapshot?.recentActions?.slice(-5).filter(a => a.type === 'cycle').length || 0;
-      toast(`Cycle #${res.snapshot?.cycle} complete`, 'success');
-      await refresh();
+      try {
+        const res = await api('POST', '/api/cycle');
+        toast(`Cycle #${res.snapshot?.cycle} complete`, 'success');
+        await refresh();
+      } catch (e) { toast('Cycle failed: ' + e.message, 'error'); }
+      finally { btnLoading('btnCycle', false); }
     }
     async function doStart() {
-      await api('POST', '/api/start', { intervalMs: 60000 });
-      toast('Agent started (60s interval)', 'success');
-      await refresh();
+      btnLoading('btnStart', true);
+      try { await api('POST', '/api/start', { intervalMs: 60000 }); toast('Agent started (60s auto-loop)', 'success'); await refresh(); }
+      catch (e) { toast('Start failed: ' + e.message, 'error'); }
+      finally { btnLoading('btnStart', false); }
     }
     async function doStop() {
-      await api('POST', '/api/stop');
-      toast('Agent stopped', 'warning');
-      await refresh();
+      btnLoading('btnStop', true);
+      try { await api('POST', '/api/stop'); toast('Agent stopped', 'warning'); await refresh(); }
+      catch (e) { toast('Stop failed: ' + e.message, 'error'); }
+      finally { btnLoading('btnStop', false); }
     }
     async function doPause() {
-      const res = await api('POST', '/api/pause');
-      toast(res.paused ? 'Agent paused' : 'Agent resumed', res.paused ? 'warning' : 'success');
-      await refresh();
+      btnLoading('btnPause', true);
+      try {
+        const res = await api('POST', '/api/pause');
+        toast(res.paused ? 'Agent paused — evaluates but won\'t execute' : 'Agent resumed', res.paused ? 'warning' : 'success');
+        await refresh();
+      } catch (e) { toast('Pause failed: ' + e.message, 'error'); }
+      finally { btnLoading('btnPause', false); }
     }
 
     async function doQuickAction() {
@@ -1709,6 +1984,123 @@
     document.getElementById('ruleInput').addEventListener('keydown', e => {
       if (e.key === 'Enter') createRule();
     });
+
+    // ─── Reasoning Trail ───
+
+    function renderReasoningTrail(data) {
+      const el = document.getElementById('trailContent');
+      const cycleEl = document.getElementById('trailCycle');
+      const intervalEl = document.getElementById('trailInterval');
+      const trail = data.trail || [];
+
+      cycleEl.textContent = `Cycle #${data.cycle || 0}`;
+
+      // Show adaptive interval info
+      if (data.nextCheck?.reason) {
+        intervalEl.textContent = data.nextCheck.reason;
+      } else if (data.nextCheck?.intervalMs) {
+        intervalEl.textContent = `Interval: ${data.nextCheck.intervalMs / 1000}s`;
+      }
+
+      if (trail.length === 0) {
+        el.innerHTML = '<div style="color:var(--muted);font-size:0.8rem">Run a cycle to see the agent\'s step-by-step reasoning.</div>';
+        return;
+      }
+
+      el.innerHTML = trail.map(step => {
+        const time = new Date(step.ts).toLocaleTimeString();
+        let detailHtml = '';
+        if (step.detail) {
+          if (typeof step.detail === 'string') {
+            detailHtml = `<div class="trail-detail">${escHtml(step.detail)}</div>`;
+          } else if (step.detail.steps) {
+            // Multi-step plan
+            detailHtml = `<div class="trail-detail" style="white-space:pre-line">${escHtml(step.detail.steps)}</div>`;
+          } else {
+            const entries = Object.entries(step.detail).filter(([,v]) => v !== null && v !== undefined);
+            if (entries.length > 0) {
+              detailHtml = `<div class="trail-detail">${entries.map(([k,v]) => {
+                const val = typeof v === 'object' ? JSON.stringify(v) : v;
+                return `<span style="color:var(--muted-dim)">${k}:</span> ${escHtml(String(val))}`;
+              }).join(' &nbsp;|&nbsp; ')}</div>`;
+            }
+          }
+        }
+        return `<div class="trail-step">
+          <span class="trail-ts">${time}</span>
+          <span class="trail-phase ${step.phase}">${step.phase}</span>
+          <div><span>${escHtml(step.message)}</span>${detailHtml}</div>
+        </div>`;
+      }).join('');
+    }
+
+    // ─── Next Check Countdown ───
+
+    let _nextCheckAt = null;
+    function renderNextCheck(nextCheck, active) {
+      const badge = document.getElementById('nextCheckBadge');
+      const countdown = document.getElementById('nextCheckCountdown');
+      if (!active || !nextCheck?.at) {
+        badge.style.display = 'none';
+        _nextCheckAt = null;
+        return;
+      }
+      _nextCheckAt = new Date(nextCheck.at);
+      badge.style.display = '';
+      updateCountdown();
+    }
+    function updateCountdown() {
+      if (!_nextCheckAt) return;
+      const badge = document.getElementById('nextCheckBadge');
+      const countdown = document.getElementById('nextCheckCountdown');
+      const diff = Math.max(0, Math.round((_nextCheckAt - Date.now()) / 1000));
+      if (diff <= 0) {
+        countdown.textContent = 'now';
+        badge.className = 'next-check soon';
+      } else if (diff < 15) {
+        countdown.textContent = `${diff}s`;
+        badge.className = 'next-check soon';
+      } else if (diff < 60) {
+        countdown.textContent = `${diff}s`;
+        badge.className = 'next-check';
+      } else {
+        const m = Math.floor(diff / 60);
+        const s = diff % 60;
+        countdown.textContent = `${m}m${s > 0 ? ' ' + s + 's' : ''}`;
+        badge.className = 'next-check';
+      }
+    }
+    setInterval(updateCountdown, 1000);
+
+    // ─── WDK Module Grid ───
+
+    function renderModuleGrid(data) {
+      const grid = document.getElementById('moduleGrid');
+      const totalBadge = document.getElementById('wdkTotalBadge');
+      if (!data.modules) return;
+
+      const activeCount = data.modules.filter(m => m.active).length;
+      totalBadge.textContent = `${activeCount}/${data.total}`;
+      totalBadge.style.background = activeCount >= 7 ? 'var(--green-bg)' : 'var(--yellow-bg)';
+      totalBadge.style.color = activeCount >= 7 ? 'var(--green)' : 'var(--yellow)';
+      totalBadge.style.borderColor = activeCount >= 7 ? '#3fb95033' : '#d2992233';
+
+      grid.innerHTML = data.modules.map(m => {
+        const statusColor = m.active ? 'var(--green)' : 'var(--muted-dim)';
+        const statusText = m.active ? 'ACTIVE' : 'INACTIVE';
+        const icon = {
+          wallet: '&#128179;', erc4337: '&#9981;', swap: '&#128260;', lending: '&#127974;',
+          bridge: '&#127309;', mcp: '&#129302;', skills: '&#128736;', x402: '&#128176;'
+        }[m.id] || '&#128268;';
+        return `<div class="module-card ${m.active ? 'active' : 'inactive'}">
+          <div style="font-size:1.1rem;margin-bottom:0.2rem">${icon}</div>
+          <div class="mod-name">${escHtml(m.name)}</div>
+          <div class="mod-pkg">${escHtml(m.pkg)}</div>
+          <div class="mod-status" style="color:${statusColor}">${statusText}</div>
+          <div class="mod-detail">${escHtml(m.detail)}</div>
+        </div>`;
+      }).join('');
+    }
 
     // Init
     refresh();

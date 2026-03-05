@@ -161,7 +161,19 @@ echo -e "  ${YELLOW}Revenue tracking:${RESET}"
 api GET /api/x402/revenue
 pause
 
-# ─── 9. LLM Reasoning ───
+# ─── 9. Credit Scoring (Lending Bot) ───
+
+header "On-Chain Credit Scoring — Autonomous Lending Decisions"
+echo -e "  ${DIM}5-dimension credit assessment: wallet age, tx history, balance, lending, collateral${RESET}"
+echo -e "  ${DIM}Enables undercollateralized lending for high-score wallets${RESET}"
+echo ""
+echo -e "  ${YELLOW}Scoring own wallet:${RESET}"
+api GET /api/credit-score
+echo -e "  ${YELLOW}Loan assessment — can this wallet borrow \$500 USDT?${RESET}"
+api POST /api/credit-score/assess '{"borrower":"'$(curl -4 -s ${BASE}/api/status 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('address','0x0'))" 2>/dev/null || echo "0x0000000000000000000000000000000000000000")'","amount":500,"token":"USDT"}'
+pause
+
+# ─── 10. LLM Reasoning ───
 
 header "LLM Reasoning — Claude-Powered Market Analysis"
 echo -e "  ${DIM}Claude analyzes portfolio, market conditions, and proposes actions${RESET}"
@@ -170,7 +182,7 @@ echo ""
 api GET /api/llm
 pause
 
-# ─── 10. Agent Cycle ───
+# ─── 11. Agent Cycle ───
 
 header "Autonomous Agent Cycle"
 echo -e "  ${DIM}refresh → evaluate (LLM + rules) → execute → log → sleep → repeat${RESET}"
@@ -180,7 +192,7 @@ echo -e "  ${YELLOW}Triggering manual cycle:${RESET}"
 api POST /api/cycle
 pause
 
-# ─── 11. Action Log ───
+# ─── 12. Action Log ───
 
 header "Action Log — Full Audit Trail"
 echo -e "  ${DIM}Every action logged with timestamp, type, and execution result${RESET}"
@@ -188,7 +200,7 @@ echo ""
 api GET "/api/actions?limit=10"
 pause
 
-# ─── 12. Agent-to-Agent Demo ───
+# ─── 13. Agent-to-Agent Demo ───
 
 header "Agent-to-Agent Payment Demo"
 echo -e "  ${DIM}Agent B pays Agent A $0.01 USDT0 for portfolio snapshot${RESET}"
@@ -212,6 +224,8 @@ echo -e "${BOLD}║  ${GREEN}✓${RESET}${BOLD} USDT0 Bridge — 26+ chains via 
 echo -e "${BOLD}║  ${GREEN}✓${RESET}${BOLD} MCP Toolkit — 42 tools for AI interop (wdk-mcp-toolkit)  ║${RESET}"
 echo -e "${BOLD}║  ${GREEN}✓${RESET}${BOLD} Agent Skills — WDK native actions (wdk-agent-skills)      ║${RESET}"
 echo -e "${BOLD}║  ${GREEN}✓${RESET}${BOLD} x402 Payments — micropayments + revenue (t402-wdk)       ║${RESET}"
+echo -e "${BOLD}║                                                              ║${RESET}"
+echo -e "${BOLD}║  ${GREEN}✓${RESET}${BOLD} Credit Score — on-chain 5-dimension lending decisions  ║${RESET}"
 echo -e "${BOLD}║                                                              ║${RESET}"
 echo -e "${BOLD}║  ${CYAN}5 strategies${RESET}${BOLD} — including Tether Diversified (USAt/XAUt)      ║${RESET}"
 echo -e "${BOLD}║  ${CYAN}LLM reasoning${RESET}${BOLD} — Claude-powered with rule-based safety net   ║${RESET}"

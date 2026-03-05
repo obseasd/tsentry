@@ -1,11 +1,11 @@
-// Tsentry — Swap Module (Uniswap V3 on Sepolia)
+// Tsentry — Swap Module (Uniswap V3)
 // Direct token swaps via Uniswap V3 SwapRouter
 
 import { ethers } from 'ethers'
 
-// Uniswap V3 Sepolia deployment addresses
-const UNISWAP = {
-  SWAP_ROUTER: '0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E', // SwapRouter02
+// Uniswap V3 default addresses (Ethereum Sepolia — overridable via config)
+const DEFAULT_UNISWAP = {
+  SWAP_ROUTER: '0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E',
   QUOTER_V2: '0xEd1f6473345F45b75F8179591dd5bA1888cf2FB3',
   FACTORY: '0x0227628f3F023bb0B980b67D528571c95c6DaC1c'
 }
@@ -24,6 +24,11 @@ const FACTORY_ABI = [
   'function getPool(address tokenA, address tokenB, uint24 fee) view returns (address)'
 ]
 
+const POOL_ABI = [
+  'function liquidity() view returns (uint128)',
+  'function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked)'
+]
+
 // Common fee tiers
 const FEE_TIERS = [500, 3000, 10000] // 0.05%, 0.3%, 1%
 
@@ -32,13 +37,16 @@ export class UniswapSwap {
    * @param {object} config
    * @param {import('ethers').Wallet} config.signer
    * @param {object} config.tokens - { symbol: { address, decimals } }
+   * @param {object} [config.uniswap] - { SWAP_ROUTER, QUOTER_V2, FACTORY } overrides
    */
   constructor (config) {
     this.signer = config.signer
     this.tokens = config.tokens
-    this.router = new ethers.Contract(UNISWAP.SWAP_ROUTER, ROUTER_ABI, config.signer)
-    this.quoter = new ethers.Contract(UNISWAP.QUOTER_V2, QUOTER_ABI, config.signer)
-    this.factory = new ethers.Contract(UNISWAP.FACTORY, FACTORY_ABI, config.signer.provider)
+    const addrs = config.uniswap || DEFAULT_UNISWAP
+    this.routerAddress = addrs.SWAP_ROUTER
+    this.router = new ethers.Contract(addrs.SWAP_ROUTER, ROUTER_ABI, config.signer)
+    this.quoter = new ethers.Contract(addrs.QUOTER_V2, QUOTER_ABI, config.signer)
+    this.factory = new ethers.Contract(addrs.FACTORY, FACTORY_ABI, config.signer.provider)
   }
 
   /**
@@ -49,9 +57,16 @@ export class UniswapSwap {
    */
   async findBestPool (tokenA, tokenB) {
     for (const fee of FEE_TIERS) {
-      const pool = await this.factory.getPool(tokenA, tokenB, fee)
-      if (pool !== ethers.ZeroAddress) {
-        return { fee, pool }
+      const poolAddr = await this.factory.getPool(tokenA, tokenB, fee)
+      if (poolAddr !== ethers.ZeroAddress) {
+        // Verify pool is initialized (has liquidity) — prevents LOK revert
+        try {
+          const pool = new ethers.Contract(poolAddr, POOL_ABI, this.signer.provider)
+          const liq = await pool.liquidity()
+          if (liq > 0n) return { fee, pool: poolAddr }
+        } catch {
+          // Pool exists but not initialized — skip
+        }
       }
     }
     return null
@@ -152,9 +167,9 @@ export class UniswapSwap {
       'function approve(address,uint256) returns (bool)'
     ], this.signer)
 
-    const allowance = await erc20.allowance(this.signer.address, UNISWAP.SWAP_ROUTER)
+    const allowance = await erc20.allowance(this.signer.address, this.routerAddress)
     if (allowance < amountIn) {
-      const appTx = await erc20.approve(UNISWAP.SWAP_ROUTER, ethers.MaxUint256)
+      const appTx = await erc20.approve(this.routerAddress, ethers.MaxUint256)
       await appTx.wait()
     }
 
@@ -195,12 +210,16 @@ export class UniswapSwap {
       for (let j = i + 1; j < symbols.length; j++) {
         const a = symbols[i]
         const b = symbols[j]
-        const poolInfo = await this.findBestPool(
-          this.tokens[a].address,
-          this.tokens[b].address
-        )
-        if (poolInfo) {
-          pairs.push({ tokenA: a, tokenB: b, fee: poolInfo.fee, pool: poolInfo.pool })
+        try {
+          const poolInfo = await this.findBestPool(
+            this.tokens[a].address,
+            this.tokens[b].address
+          )
+          if (poolInfo) {
+            pairs.push({ tokenA: a, tokenB: b, fee: poolInfo.fee, pool: poolInfo.pool })
+          }
+        } catch {
+          // Skip pairs that fail (e.g. RPC error, uninitialized pool)
         }
       }
     }

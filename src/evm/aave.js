@@ -16,8 +16,18 @@ const ATOKEN_ABI = [
   'function UNDERLYING_ASSET_ADDRESS() view returns (address)'
 ]
 
-// Aave V3 Sepolia aToken addresses (supply receipt tokens)
-const ATOKENS = {
+// Aave V3 ProtocolDataProvider — flat return, easy to parse
+const DATA_PROVIDER_ABI = [
+  'function getReserveData(address asset) external view returns (uint256 unbacked, uint256 accruedToTreasuryScaled, uint256 totalAToken, uint256 totalStableDebt, uint256 totalVariableDebt, uint256 liquidityRate, uint256 variableBorrowRate, uint256 stableBorrowRate, uint256 averageStableBorrowRate, uint256 liquidityIndex, uint256 variableBorrowIndex, uint40 lastUpdateTimestamp)'
+]
+
+// Aave V3 ProtocolDataProvider (default: Ethereum Sepolia, overridable via config)
+const DEFAULT_DATA_PROVIDER = '0x3e9708d80f7B3e43118013075F7e95CE3AB31F31'
+
+const SECONDS_PER_YEAR = 31_536_000
+
+// Default aToken addresses (Ethereum Sepolia — overridable via config)
+const DEFAULT_ATOKENS = {
   USDT: '0xAF0F6e8b0Dc5c913bbF4d14c22B4E78Dd14310B6',
   DAI: '0x29598b72eb5CeBd806C5dCD549490FdA35B13cD8',
   USDC: '0x16dA4541aD1807f4443d92D26044C1147406EB80',
@@ -36,7 +46,8 @@ export class AaveLending {
     this.pool = new ethers.Contract(config.poolAddress, POOL_ABI, config.signer)
     this.poolAddress = config.poolAddress
     this.tokens = config.tokens
-    this.aTokens = ATOKENS
+    this.aTokens = config.aTokens || DEFAULT_ATOKENS
+    this.dataProviderAddress = config.dataProviderAddress || DEFAULT_DATA_PROVIDER
   }
 
   /** Get user account data from Aave */
@@ -67,6 +78,53 @@ export class AaveLending {
     for (const symbol of Object.keys(this.aTokens)) {
       if (this.tokens[symbol]) {
         result[symbol] = await this.getSuppliedBalance(symbol)
+      }
+    }
+    return result
+  }
+
+  /**
+   * Get supply APY and borrow APY for a token from Aave on-chain data
+   * @param {string} symbol
+   * @returns {object} { supplyAPY, borrowAPY } as percentages (e.g. 3.45 = 3.45%)
+   */
+  async getReserveAPY (symbol) {
+    const tokenInfo = this.tokens[symbol]
+    if (!tokenInfo) return { supplyAPY: 0, borrowAPY: 0 }
+
+    try {
+      const dataProvider = new ethers.Contract(
+        this.dataProviderAddress, DATA_PROVIDER_ABI, this.signer.provider
+      )
+      const data = await dataProvider.getReserveData(tokenInfo.address)
+
+      // liquidityRate and variableBorrowRate are in RAY (1e27)
+      const supplyAPR = Number(data.liquidityRate) / 1e27
+      const borrowAPR = Number(data.variableBorrowRate) / 1e27
+
+      // Compound per-second rate to APY
+      const supplyAPY = (Math.pow(1 + supplyAPR / SECONDS_PER_YEAR, SECONDS_PER_YEAR) - 1) * 100
+      const borrowAPY = (Math.pow(1 + borrowAPR / SECONDS_PER_YEAR, SECONDS_PER_YEAR) - 1) * 100
+
+      return {
+        supplyAPY: parseFloat(supplyAPY.toFixed(4)),
+        borrowAPY: parseFloat(borrowAPY.toFixed(4))
+      }
+    } catch (e) {
+      console.error(`[aave] Failed to fetch APY for ${symbol}: ${e.message}`)
+      return { supplyAPY: 0, borrowAPY: 0 }
+    }
+  }
+
+  /**
+   * Get APY for all configured tokens
+   * @returns {object} { USDT: { supplyAPY, borrowAPY }, DAI: {...}, ... }
+   */
+  async getAllReserveAPYs () {
+    const result = {}
+    for (const symbol of Object.keys(this.aTokens)) {
+      if (this.tokens[symbol]) {
+        result[symbol] = await this.getReserveAPY(symbol)
       }
     }
     return result

@@ -1,0 +1,42 @@
+services:
+  - type: web
+    name: tsentry
+    runtime: node
+    plan: free
+    buildCommand: npm ci --omit=dev
+    startCommand: node src/server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3000"
+      - key: WDK_SEED
+        sync: false
+      - key: ETH_RPC_URL
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ERC4337_BUNDLER_URL
+        sync: false
+      - key: AAVE_POOL
+        sync: false
+      - key: AAVE_DATA_PROVIDER
+        sync: false
+      - key: USDT_CONTRACT
+        sync: false
+      - key: USDC_CONTRACT
+        sync: false
+      - key: WETH_CONTRACT
+        sync: false
+      - key: ATOKEN_USDT
+        sync: false
+      - key: ATOKEN_USDC
+        sync: false
+      - key: ATOKEN_WETH
+        sync: false
+      - key: UNISWAP_ROUTER
+        sync: false
+      - key: UNISWAP_QUOTER
+        sync: false
+      - key: UNISWAP_FACTORY
+        sync: false

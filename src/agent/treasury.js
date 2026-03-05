@@ -36,6 +36,7 @@ export class TreasuryAgent {
     this.aaveAccount = null
     this.portfolio = null
     this.prices = {}
+    this.aaveAPYs = {} // { USDT: { supplyAPY, borrowAPY }, ... }
     this.swapPairs = []
     this.bridgeChains = []
     this.bridgeRoutes = []
@@ -47,6 +48,14 @@ export class TreasuryAgent {
     // Logging
     this.actionLog = []
     this.errors = []
+
+    // Reasoning trail — transparent step-by-step decision log per cycle
+    this.reasoningTrail = [] // current cycle's trail
+    this.lastReasoningTrail = [] // previous completed cycle's trail (for dashboard)
+
+    // Adaptive interval tracking
+    this.nextCheckAt = null // Date.toISOString() of next scheduled check
+    this.nextCheckReason = null // why this interval was chosen
 
     // Loop config
     this.pollIntervalMs = 60_000 // 1 min
@@ -76,7 +85,14 @@ export class TreasuryAgent {
     this.aave = new AaveLending({
       signer: this.wallet.signer,
       poolAddress: process.env.AAVE_POOL,
-      tokens: this.wallet.tokens
+      tokens: this.wallet.tokens,
+      dataProviderAddress: process.env.AAVE_DATA_PROVIDER || undefined,
+      aTokens: process.env.ATOKEN_USDT ? {
+        USDT: process.env.ATOKEN_USDT,
+        USDC: process.env.ATOKEN_USDC,
+        WETH: process.env.ATOKEN_WETH,
+        ...(process.env.ATOKEN_DAI ? { DAI: process.env.ATOKEN_DAI } : {})
+      } : undefined
     })
 
     // Swap: Velora (WDK-native, 160+ DEX aggregator) on mainnet,
@@ -96,14 +112,14 @@ export class TreasuryAgent {
           this.log('swap', 'Velora DEX aggregator initialized (WDK-native, 160+ DEXs)')
         } else {
           this.log('swap', `Chain ${veloraSwap._chainId} not supported by Velora — falling back to Uniswap V3`)
-          this.swap = new UniswapSwap({ signer: this.wallet.signer, tokens: this.wallet.tokens })
+          this.swap = new UniswapSwap({ signer: this.wallet.signer, tokens: this.wallet.tokens, uniswap: this._uniswapAddrs() })
         }
       } catch (e) {
         this.log('swap', `Velora init failed: ${e.message} — falling back to Uniswap V3`)
-        this.swap = new UniswapSwap({ signer: this.wallet.signer, tokens: this.wallet.tokens })
+        this.swap = new UniswapSwap({ signer: this.wallet.signer, tokens: this.wallet.tokens, uniswap: this._uniswapAddrs() })
       }
     } else {
-      this.swap = new UniswapSwap({ signer: this.wallet.signer, tokens: this.wallet.tokens })
+      this.swap = new UniswapSwap({ signer: this.wallet.signer, tokens: this.wallet.tokens, uniswap: this._uniswapAddrs() })
     }
 
     // Discover available swap pairs
@@ -182,8 +198,11 @@ export class TreasuryAgent {
       this.supplied = await this.aave.getAllSupplied()
       this.aaveAccount = await this.aave.getAccountData()
 
-      // Live prices
+      // Live prices + Aave APYs
       this.prices = await getPrices(['ETH', 'BTC', 'USDT', 'DAI', 'USDC'])
+      try {
+        this.aaveAPYs = await this.aave.getAllReserveAPYs()
+      } catch { this.aaveAPYs = {} }
 
       // Portfolio value (wallet + supplied)
       const combined = { ...this.balances }
@@ -256,7 +275,14 @@ export class TreasuryAgent {
         if (decision.next_check_suggestion && this.active) {
           const ms = this._parseInterval(decision.next_check_suggestion)
           if (ms && ms !== this.pollIntervalMs) {
+            const prev = this.pollIntervalMs
             this.pollIntervalMs = ms
+            this.nextCheckReason = `AI: "${decision.next_check_suggestion}" (was ${prev / 1000}s)`
+            this._reason('interval', `Adaptive: next check in ${decision.next_check_suggestion} (${decision.risk_level} risk)`, {
+              previous: prev / 1000 + 's',
+              next: decision.next_check_suggestion,
+              risk: decision.risk_level
+            })
             this.log('llm_interval', `LLM suggests next check in ${decision.next_check_suggestion}`)
           }
         }
@@ -460,7 +486,8 @@ export class TreasuryAgent {
       prices: { ...this.prices },
       supplied: { ...this.supplied },
       balances: { ...this.balances },
-      aaveAccount: this.aaveAccount ? { ...this.aaveAccount } : null
+      aaveAccount: this.aaveAccount ? { ...this.aaveAccount } : null,
+      aaveAPYs: { ...this.aaveAPYs }
     }
 
     this.rules.push(rule)
@@ -531,20 +558,19 @@ export class TreasuryAgent {
     switch (cond.type) {
       case 'apr_below':
       case 'apy_below': {
-        // Aave supply APY — approximated from account data
-        // In production this would query Aave's getReserveData
-        // For now, use a simplified proxy: total collateral yield
-        current = this.aaveAccount?.liquidationThreshold || 0
-        // Fallback: just check if threshold is met
-        return this._compare(cond.value, '>=', current)
+        // Real Aave supply APY from on-chain ProtocolDataProvider
+        const token = cond.token || 'USDT'
+        current = this.aaveAPYs?.[token]?.supplyAPY || 0
+        return current < cond.value
       }
 
       case 'apr_drop_pct': {
-        // APR dropped by X% relative to initial
-        const initialVal = snapshot.aaveAccount?.totalCollateralUSD || 0
-        const currentVal = this.aaveAccount?.totalCollateralUSD || 0
-        if (initialVal <= 0) return false
-        const dropPct = ((initialVal - currentVal) / initialVal) * 100
+        // APY dropped by X% relative to initial snapshot
+        const token = cond.token || 'USDT'
+        const initialAPY = snapshot.aaveAPYs?.[token]?.supplyAPY || 0
+        const currentAPY = this.aaveAPYs?.[token]?.supplyAPY || 0
+        if (initialAPY <= 0) return false
+        const dropPct = ((initialAPY - currentAPY) / initialAPY) * 100
         return dropPct >= cond.value
       }
 
@@ -614,6 +640,18 @@ export class TreasuryAgent {
     const val = parseInt(match[1])
     const unit = match[2]
     return val * ({ s: 1000, m: 60_000, h: 3_600_000 }[unit])
+  }
+
+  /** Resolve Uniswap contract addresses from env vars (undefined → swap.js defaults) */
+  _uniswapAddrs () {
+    if (process.env.UNISWAP_ROUTER) {
+      return {
+        SWAP_ROUTER: process.env.UNISWAP_ROUTER,
+        QUOTER_V2: process.env.UNISWAP_QUOTER,
+        FACTORY: process.env.UNISWAP_FACTORY
+      }
+    }
+    return undefined
   }
 
   /** Check if a swap pair exists */
@@ -694,7 +732,7 @@ export class TreasuryAgent {
 
         case 'swap':
           result = await this.swap.sell(
-            action.tokenIn, action.tokenOut, action.amount, 2
+            action.tokenIn || action.token, action.tokenOut, action.amount, 2
           )
           break
 
@@ -747,44 +785,90 @@ export class TreasuryAgent {
     }
   }
 
+  /** Add a step to the current cycle's reasoning trail */
+  _reason (phase, message, detail = null) {
+    const step = { ts: new Date().toISOString(), phase, message }
+    if (detail) step.detail = detail
+    this.reasoningTrail.push(step)
+  }
+
   /**
    * Run a single agent cycle: refresh → evaluate → execute
+   * Each phase is logged to the reasoning trail for transparency
    */
   async cycle () {
     this._cycleCount++
     const cycleId = this._cycleCount
 
-    try {
-      await this.refresh()
+    // Reset reasoning trail for this cycle
+    this.reasoningTrail = [{ ts: new Date().toISOString(), phase: 'start', message: `Cycle #${cycleId} started` }]
 
+    try {
+      // Phase 1: Refresh on-chain state
+      this._reason('refresh', 'Fetching on-chain state: balances, Aave positions, prices, APYs')
+      await this.refresh()
+      const lPct = this._currentLendingPct()
+      this._reason('refresh', `State loaded: $${this.portfolio?.totalUSD?.toFixed(2) || '?'} total, ${lPct}% in lending`, {
+        balances: Object.fromEntries(Object.entries(this.balances).filter(([, v]) => v > 0)),
+        supplied: Object.fromEntries(Object.entries(this.supplied).filter(([, v]) => v > 0)),
+        lendingPct: lPct,
+        healthFactor: this.aaveAccount?.healthFactor
+      })
+
+      // Phase 2: Evaluate — propose actions
+      this._reason('evaluate', 'Running rule engine + LLM analysis')
       const actions = await this.evaluate()
 
       if (actions.length > 0) {
+        // Build a multi-step plan description
+        const plan = actions.map((a, i) => `${i + 1}. ${a.type}${a.token ? ' ' + a.token : ''}${a.tokenOut ? ' → ' + a.tokenOut : ''} ${a.amount || ''} — ${a.reason || ''}`).join('\n')
+        this._reason('plan', `${actions.length} action(s) proposed`, { steps: plan })
         this.log('cycle', `Cycle #${cycleId}: ${actions.length} action(s) proposed`, {
           actions: actions.map(a => ({ type: a.type, reason: a.reason }))
         })
 
+        // Phase 3: Execute each action
         for (const action of actions) {
           if (action.type === 'alert') {
+            this._reason('alert', action.reason, { level: action.level })
             this.log('alert', action.reason, { level: action.level })
             continue
           }
           if (!this.paused) {
-            await this.execute(action)
+            this._reason('execute', `Executing: ${action.type} ${action.token || ''} ${action.amount || ''}`)
+            const result = await this.execute(action)
+            if (result?.error) {
+              this._reason('error', `Failed: ${result.error}`, { action: action.type })
+            } else if (result?.skipped) {
+              this._reason('skip', result.reason || 'Skipped')
+            } else {
+              this._reason('done', `Confirmed: ${action.type}${result?.tx ? ' tx:' + result.tx.slice(0, 10) + '...' : ''}`)
+            }
           } else {
+            this._reason('paused', `Skipping ${action.type} (agent paused)`)
             this.log('skip', `Paused — skipping ${action.type}`, action)
           }
         }
       } else {
+        this._reason('plan', 'No actions needed — holding position', {
+          lendingPct: lPct,
+          targetLending: this.strategy?.allocations?.lending
+        })
         this.log('cycle', `Cycle #${cycleId}: no actions needed`, {
           balances: this.balances,
           supplied: this.supplied,
-          lendingPct: this._currentLendingPct()
+          lendingPct: lPct
         })
       }
+
+      this._reason('complete', `Cycle #${cycleId} complete`)
     } catch (e) {
+      this._reason('error', `Cycle failed: ${e.message}`)
       this.logError('cycle', e)
     }
+
+    // Save trail for dashboard access
+    this.lastReasoningTrail = [...this.reasoningTrail]
   }
 
   _currentLendingPct () {
@@ -831,7 +915,9 @@ export class TreasuryAgent {
 
   _scheduleNext () {
     if (!this.active) return
+    this.nextCheckAt = new Date(Date.now() + this.pollIntervalMs).toISOString()
     this._timer = setTimeout(async () => {
+      this.nextCheckAt = null
       await this.cycle()
       this._scheduleNext()
     }, this.pollIntervalMs)
@@ -850,6 +936,7 @@ export class TreasuryAgent {
       balances: this.balances,
       supplied: this.supplied,
       aaveAccount: this.aaveAccount,
+      aaveAPYs: this.aaveAPYs,
       portfolio: this.portfolio,
       prices: this.prices,
       lendingPct: this._currentLendingPct(),
@@ -864,6 +951,12 @@ export class TreasuryAgent {
         connected: !!this.llm,
         model: this.llm?.model || null,
         lastDecision: this._lastLlmDecision || null
+      },
+      reasoningTrail: this.lastReasoningTrail,
+      nextCheck: {
+        at: this.nextCheckAt,
+        intervalMs: this.pollIntervalMs,
+        reason: this.nextCheckReason
       },
       rules: this.rules.map(r => ({ id: r.id, description: r.description, active: r.active, triggeredCount: r.triggeredCount, oneShot: r.oneShot, conditions: r.conditions, actions: r.actions, createdAt: r.createdAt })),
       recentActions: this.actionLog.slice(-50),

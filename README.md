@@ -46,6 +46,43 @@ Seed Phrase (WDK_SEED)
      └─────────────────────────────────────────┘
 ```
 
+## Agent Decision Flow
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    AUTONOMOUS CYCLE                              │
+│                                                                  │
+│  ┌──────────┐    ┌──────────────┐    ┌──────────┐    ┌────────┐ │
+│  │ 1.REFRESH │───▶│ 2. EVALUATE  │───▶│ 3. PLAN  │───▶│4.EXECUTE│ │
+│  │           │    │              │    │          │    │        │ │
+│  │ Balances  │    │ ┌──────────┐ │    │ Merge &  │    │ On-chain│ │
+│  │ Aave pos  │    │ │ Rules    │ │    │ rank by  │    │ tx with │ │
+│  │ Prices    │    │ │ Engine   │ │    │ priority │    │ receipt │ │
+│  │ APYs      │    │ └────┬─────┘ │    │ & conf.  │    │ verify  │ │
+│  │ Health F  │    │      │       │    │ ≥ 0.7    │    │ + retry │ │
+│  └──────────┘    │ ┌────▼─────┐ │    └──────────┘    └────┬───┘ │
+│                  │ │ LLM      │ │                         │     │
+│  ┌──────────┐    │ │ Claude   │ │    ┌──────────┐    ┌────▼───┐ │
+│  │ 5. LOG   │◀───│ │ Haiku    │ │    │ Custom   │    │Confirm │ │
+│  │          │    │ └──────────┘ │    │ NL Rules │───▶│ or     │ │
+│  │ Audit    │    └──────────────┘    │ (user)   │    │ Retry  │ │
+│  │ Trail    │                        └──────────┘    └────────┘ │
+│  └────┬─────┘                                                    │
+│       │          ┌─────────────────────┐                         │
+│       └─────────▶│ 6. ADAPTIVE SLEEP   │────── repeat ──────────┘
+│                  │ 30s → 1h (AI-tuned) │
+│                  └─────────────────────┘
+└─────────────────────────────────────────────────────────────────┘
+
+Execution Targets:
+  ┌────────┐  ┌────────┐  ┌────────┐  ┌────────┐  ┌────────┐
+  │ Aave   │  │ Velora │  │ USDT0  │  │ERC-4337│  │  x402  │
+  │ Supply │  │  Swap  │  │ Bridge │  │Gasless │  │Payment │
+  │Withdraw│  │ Quote  │  │ 26+    │  │Batched │  │  Gate  │
+  │ Borrow │  │  Sell  │  │ chains │  │  Ops   │  │Revenue │
+  └────────┘  └────────┘  └────────┘  └────────┘  └────────┘
+```
+
 ## Features
 
 ### Wallet (WDK-Native)
@@ -88,6 +125,14 @@ Seed Phrase (WDK_SEED)
 | `POST /api/swap/execute` | $0.10 USDT | Execute on-chain swap |
 | `POST /api/bridge/execute` | $0.10 USDT | Execute cross-chain bridge |
 | `POST /api/llm/reason` | $0.05 USDT | AI-powered reasoning |
+
+### On-Chain Credit Scoring (Lending Bot)
+- **Autonomous credit assessment** for borrower addresses using on-chain data
+- **5 scoring dimensions** (20 pts each): wallet age, tx history, balance stability, lending history, collateral ratio
+- **Risk classification**: low / medium / high — with max loan amount + suggested APR
+- **Loan decision engine**: `POST /api/credit-score/assess` — auto-approve or deny based on score
+- **Undercollateralized lending**: high-score wallets (≥80) eligible for 75% LTV without full collateral
+- **API**: `GET /api/credit-score?address=0x...` for scoring, `POST /api/credit-score/assess` for loan decisions
 
 ### USDT Yield Strategy
 The default Tether-centric strategy:
@@ -246,6 +291,12 @@ tsentry/
 | GET | `/api/erc4337` | Smart Account status |
 | POST | `/api/erc4337/quote-transfer` | Quote gasless transfer fee |
 | POST | `/api/erc4337/transfer` | Execute gasless transfer |
+
+### Credit Scoring (Lending Bot)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/credit-score` | Score an address (query: `?address=0x...`) |
+| POST | `/api/credit-score/assess` | Autonomous loan decision (`{borrower, amount, token}`) |
 
 ### x402 Agentic Payments
 | Method | Path | Description |

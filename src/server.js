@@ -63,8 +63,18 @@ app.get('/api/health', (req, res) => {
   })
 })
 
-app.get('/api/status', readLimiter, (req, res) => {
+app.get('/api/status', readLimiter, async (req, res) => {
   const snap = agent.getSnapshot()
+  // Detect chain info from provider
+  let chainInfo = { name: 'Unknown', chainId: 0, type: 'testnet' }
+  try {
+    const network = await agent.wallet?.provider?.getNetwork()
+    const cid = Number(network?.chainId || 0)
+    const { getChainById } = await import('./evm/chains.js')
+    const cfg = getChainById(cid)
+    if (cfg) { chainInfo = { name: cfg.name, chainId: cid, type: cfg.type } }
+    else { chainInfo = { name: network?.name || `Chain ${cid}`, chainId: cid, type: 'unknown' } }
+  } catch {}
   res.json({
     name: 'Tsentry',
     version: '0.1.0',
@@ -77,7 +87,8 @@ app.get('/api/status', readLimiter, (req, res) => {
     strategy: snap.strategy?.name || 'none',
     swapProvider: snap.swapProvider || 'uniswap',
     lendingPct: snap.lendingPct,
-    uptime: process.uptime()
+    uptime: process.uptime(),
+    chain: chainInfo
   })
 })
 
@@ -87,6 +98,7 @@ app.get('/api/portfolio', readLimiter, (req, res) => {
     balances: snap.balances,
     supplied: snap.supplied,
     aaveAccount: snap.aaveAccount,
+    aaveAPYs: snap.aaveAPYs,
     portfolio: snap.portfolio,
     prices: snap.prices,
     lendingPct: snap.lendingPct
@@ -104,6 +116,40 @@ app.get('/api/actions', readLimiter, (req, res) => {
 
 app.get('/api/snapshot', readLimiter, (req, res) => {
   res.json(agent.getSnapshot())
+})
+
+app.get('/api/reasoning', readLimiter, (req, res) => {
+  const snap = agent.getSnapshot()
+  res.json({
+    trail: snap.reasoningTrail || [],
+    nextCheck: snap.nextCheck,
+    cycle: snap.cycle,
+    llm: {
+      enabled: snap.llm?.enabled,
+      connected: snap.llm?.connected,
+      lastReasoning: snap.llm?.lastDecision?.reasoning,
+      market: snap.llm?.lastDecision?.market_assessment,
+      risk: snap.llm?.lastDecision?.risk_level,
+      nextSuggestion: snap.llm?.lastDecision?.next_check_suggestion
+    }
+  })
+})
+
+app.get('/api/modules', readLimiter, (req, res) => {
+  const snap = agent.getSnapshot()
+  res.json({
+    total: 8,
+    modules: [
+      { id: 'wallet', name: 'WDK Wallet', pkg: '@tetherto/wdk-wallet-evm', active: snap.walletSource === 'wdk', detail: snap.walletSource === 'wdk' ? `BIP-44 ${snap.address?.slice(0, 8)}...` : 'ethers.js fallback' },
+      { id: 'erc4337', name: 'ERC-4337', pkg: '@tetherto/wdk-wallet-evm-erc-4337', active: !!snap.erc4337?.enabled, detail: snap.erc4337?.enabled ? `Safe ${snap.erc4337.mode} mode` : 'Not configured' },
+      { id: 'swap', name: 'Velora DEX', pkg: '@tetherto/wdk-protocol-swap-velora-evm', active: snap.swapProvider === 'velora', detail: snap.swapProvider === 'velora' ? '160+ protocols' : 'Uniswap V3 fallback' },
+      { id: 'lending', name: 'Aave V3', pkg: '@tetherto/wdk-protocol-lending-aave-evm', active: !!agent.aave, detail: `Pool ${process.env.AAVE_POOL?.slice(0, 8)}...` },
+      { id: 'bridge', name: 'USDT0 Bridge', pkg: '@tetherto/wdk-protocol-bridge-usdt0-evm', active: !!agent.bridge, detail: `${snap.bridgeChains?.length || 0} chains (LayerZero V2)` },
+      { id: 'mcp', name: 'MCP Toolkit', pkg: '@tetherto/wdk-mcp-toolkit', active: true, detail: '44 tools via OpenClaw' },
+      { id: 'skills', name: 'Agent Skills', pkg: '@tetherto/wdk-agent-skills', active: true, detail: 'Interop standard' },
+      { id: 'x402', name: 'x402 Payments', pkg: '@t402/wdk', active: !!x402State, detail: x402State ? `USDT0 on ${process.env.X402_NETWORK}` : 'Client-ready' }
+    ]
+  })
 })
 
 // ─── API: Control ───
@@ -450,7 +496,13 @@ app.post('/api/withdraw', txLimiter, async (req, res) => {
 // ─── API: Swap ───
 
 app.get('/api/swap/pairs', readLimiter, (req, res) => {
-  res.json({ pairs: agent.swapPairs })
+  res.json({
+    pairs: agent.swapPairs,
+    provider: agent.swapProvider,
+    note: agent.swapPairs.length === 0
+      ? 'No liquidity pools available on this testnet. Swap is fully functional — pools on mainnet (Velora, 160+ DEXs) have deep liquidity. Try Ethereum Sepolia or switch to mainnet.'
+      : undefined
+  })
 })
 
 app.post('/api/swap/quote', writeLimiter, async (req, res) => {
@@ -590,6 +642,64 @@ app.post('/api/erc4337/transfer', txLimiter, async (req, res) => {
     const result = await agent.erc4337.transfer(tokenInfo.address, to, amountWei)
     agent.log('erc4337_transfer', `Smart Account transfer ${amount} ${token} → ${to}`, result)
     res.json({ ok: true, hash: result.hash, fee: result.fee.toString() })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// ─── API: Credit Scoring (Lending Bot Track) ───
+
+app.get('/api/credit-score', readLimiter, async (req, res) => {
+  try {
+    const address = req.query.address || agent.wallet?.address
+    if (!address) return res.status(400).json({ error: 'No address provided' })
+    if (!validateAddress(address)) return res.status(400).json({ error: 'Invalid address' })
+
+    const { CreditScorer } = await import('./evm/credit-score.js')
+    const scorer = new CreditScorer({
+      provider: agent.wallet?.provider,
+      poolAddress: process.env.AAVE_POOL,
+      tokens: agent.wallet?.tokens || {}
+    })
+    const result = await scorer.score(address)
+    res.json(result)
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+app.post('/api/credit-score/assess', txLimiter, async (req, res) => {
+  try {
+    const { borrower, amount, token } = req.body
+    if (!borrower) return res.status(400).json({ error: 'borrower address required' })
+    if (!validateAddress(borrower)) return res.status(400).json({ error: 'Invalid address' })
+
+    const { CreditScorer } = await import('./evm/credit-score.js')
+    const scorer = new CreditScorer({
+      provider: agent.wallet?.provider,
+      poolAddress: process.env.AAVE_POOL,
+      tokens: agent.wallet?.tokens || {}
+    })
+    const credit = await scorer.score(borrower)
+
+    const requestedUSD = parseFloat(amount) || 0
+    const approved = requestedUSD <= credit.maxLoanUSD
+    const decision = {
+      ...credit,
+      loanRequest: { amount: requestedUSD, token: token || 'USDT' },
+      approved,
+      reason: approved
+        ? `Approved: score ${credit.score}/100, max loan $${credit.maxLoanUSD}, requested $${requestedUSD}`
+        : `Denied: score ${credit.score}/100, max loan $${credit.maxLoanUSD}, requested $${requestedUSD} exceeds limit`,
+      terms: approved ? {
+        apr: credit.suggestedAPR,
+        maxDuration: credit.score >= 60 ? '30 days' : '14 days',
+        collateralRequired: credit.score >= 80 ? 'none' : `${Math.round((1 - credit.maxLoanUSD / Math.max(requestedUSD, 1)) * 100 + 100)}%`
+      } : null
+    }
+
+    agent.log('credit', `Credit assessment: ${borrower.slice(0, 10)}... → score ${credit.score}, ${approved ? 'APPROVED' : 'DENIED'} $${requestedUSD}`)
+    res.json(decision)
   } catch (e) {
     res.status(500).json({ error: e.message })
   }

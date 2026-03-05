@@ -23,6 +23,36 @@ export const CHAINS = {
     x402: null // USDT0 not deployed on testnets
   },
 
+  baseSepolia: {
+    name: 'Base Sepolia',
+    chainId: 84532,
+    rpcUrl: 'https://sepolia.base.org',
+    explorer: 'https://sepolia.basescan.org',
+    type: 'testnet',
+    tokens: {
+      USDT: { address: '0x0a215D8ba66387DCA84B284D18c3B4ec3de6E54a', decimals: 6 },
+      USDC: { address: '0xba50Cd2A20f6DA35D788639E581bca8d0B5d4D5f', decimals: 6 },
+      WETH: { address: '0x4200000000000000000000000000000000000006', decimals: 18 }
+    },
+    aave: {
+      pool: '0x8bAB6d1b75f19e9eD9fCe8b9BD338844fF79aE27',
+      dataProvider: '0xBc9f5b7E248451CdD7cA54e717a2BFe1F32b566b',
+      faucet: '0xD9145b5F45Ad4519c7ACcD6E0A4A82e83bB8A6Dc',
+      aTokens: {
+        USDT: '0xcE3CAae5Ed17A7AafCEEbc897DE843fA6CC0c018',
+        USDC: '0x10F1A9D11CDf50041f3f8cB7191CBE2f31750ACC',
+        WETH: '0x73a5bB60b0B0fc35710DDc0ea9c407031E31Bdbb'
+      }
+    },
+    swap: 'uniswap',
+    uniswap: {
+      SWAP_ROUTER: '0x94cC0AaC535CCDB3C01d6787D6413C739ae12bc4',
+      QUOTER_V2: '0xC5290058841028F1614F3A6F0F5816cAd0df5E27',
+      FACTORY: '0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24'
+    },
+    x402: null
+  },
+
   // ─── Mainnets ───
   arbitrum: {
     name: 'Arbitrum One',
