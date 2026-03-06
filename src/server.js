@@ -653,7 +653,8 @@ app.get('/api/credit-score', readLimiter, async (req, res) => {
   try {
     const address = req.query.address || agent.wallet?.address
     if (!address) return res.status(400).json({ error: 'No address provided' })
-    if (!validateAddress(address)) return res.status(400).json({ error: 'Invalid address' })
+    const addrErr = validateAddress(address)
+    if (addrErr) return res.status(400).json({ error: addrErr })
 
     const { CreditScorer } = await import('./evm/credit-score.js')
     const scorer = new CreditScorer({
@@ -672,7 +673,8 @@ app.post('/api/credit-score/assess', txLimiter, async (req, res) => {
   try {
     const { borrower, amount, token } = req.body
     if (!borrower) return res.status(400).json({ error: 'borrower address required' })
-    if (!validateAddress(borrower)) return res.status(400).json({ error: 'Invalid address' })
+    const addrErr2 = validateAddress(borrower)
+    if (addrErr2) return res.status(400).json({ error: addrErr2 })
 
     const { CreditScorer } = await import('./evm/credit-score.js')
     const scorer = new CreditScorer({
