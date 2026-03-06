@@ -696,7 +696,7 @@ app.post('/api/credit-score/assess', txLimiter, async (req, res) => {
       terms: approved ? {
         apr: credit.suggestedAPR,
         maxDuration: credit.score >= 60 ? '30 days' : '14 days',
-        collateralRequired: credit.score >= 80 ? 'none' : `${Math.round((1 - credit.maxLoanUSD / Math.max(requestedUSD, 1)) * 100 + 100)}%`
+        collateralRequired: credit.score >= 80 ? 'none' : credit.score >= 60 ? '120%' : credit.score >= 40 ? '150%' : '200%'
       } : null
     }
 
