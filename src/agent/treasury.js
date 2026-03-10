@@ -918,8 +918,12 @@ export class TreasuryAgent {
     if (!this.active) return
     this.nextCheckAt = new Date(Date.now() + this.pollIntervalMs).toISOString()
     this._timer = setTimeout(async () => {
-      this.nextCheckAt = null
-      await this.cycle()
+      try {
+        this.nextCheckAt = null
+        await this.cycle()
+      } catch (e) {
+        this.logError('schedule', e)
+      }
       this._scheduleNext()
     }, this.pollIntervalMs)
   }

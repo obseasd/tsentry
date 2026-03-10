@@ -33,6 +33,21 @@ app.use(express.static(path.join(__dirname, '..', 'web', 'public')))
 app.use(express.json())
 app.set('views', path.join(__dirname, '..', 'web', 'views'))
 
+// x402 payment gate placeholder — mounted early so it intercepts gated routes
+// Activated in boot() when X402_NETWORK env var is set
+app.use((req, res, next) => {
+  if (x402State && x402State.middleware) {
+    return x402State.middleware(req, res, next)
+  }
+  next()
+})
+app.use((req, res, next) => {
+  if (x402State && x402State.config) {
+    return revenueMiddleware(revenue, x402State.config)(req, res, next)
+  }
+  next()
+})
+
 // ─── Pages ───
 
 app.get('/', (req, res) => {
@@ -807,8 +822,6 @@ async function boot () {
             facilitatorUrl: process.env.X402_FACILITATOR || 'https://facilitator.t402.io',
             pricing: process.env.X402_PRICING ? JSON.parse(process.env.X402_PRICING) : undefined
           })
-          app.use(x402State.middleware)
-          app.use(revenueMiddleware(revenue, x402State.config))
           console.log(`[tsentry] x402 payment gate active (${network}, token: ${tokenAddress})`)
           console.log(`[tsentry] x402 gated routes: ${x402State.config.routes.join(', ')}`)
           console.log(`[tsentry] x402 revenue tracking enabled`)
