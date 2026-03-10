@@ -102,7 +102,8 @@ export class TreasuryAgent {
       try {
         const veloraSwap = new VeloraSwap({
           wdkAccount: this.wallet.wdkAccount,
-          tokens: this.wallet.tokens
+          tokens: this.wallet.tokens,
+          signer: this.wallet.signer
         })
         await veloraSwap.init()
 

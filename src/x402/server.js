@@ -36,22 +36,23 @@ export function createX402Middleware (config) {
 
   const prices = { ...PRICING, ...pricing }
 
-  // Payment-gated routes
+  // Payment-gated routes (scheme: 'exact' = EIP-3009 transferWithAuthorization)
+  const scheme = 'exact'
   const routes = {
     'GET /api/snapshot': {
-      accepts: [{ network, token: tokenAddress, maxAmountRequired: prices.snapshot }],
+      accepts: [{ scheme, network, token: tokenAddress, maxAmountRequired: prices.snapshot }],
       description: 'Full agent snapshot with balances, positions, and strategy'
     },
     'POST /api/swap/execute': {
-      accepts: [{ network, token: tokenAddress, maxAmountRequired: prices.execute_swap }],
+      accepts: [{ scheme, network, token: tokenAddress, maxAmountRequired: prices.execute_swap }],
       description: 'Execute on-chain token swap via Velora/Uniswap'
     },
     'POST /api/bridge/execute': {
-      accepts: [{ network, token: tokenAddress, maxAmountRequired: prices.execute_bridge }],
+      accepts: [{ scheme, network, token: tokenAddress, maxAmountRequired: prices.execute_bridge }],
       description: 'Execute cross-chain USDT0 bridge via LayerZero'
     },
     'POST /api/llm/reason': {
-      accepts: [{ network, token: tokenAddress, maxAmountRequired: prices.llm_reason }],
+      accepts: [{ scheme, network, token: tokenAddress, maxAmountRequired: prices.llm_reason }],
       description: 'AI-powered market analysis and strategy reasoning'
     }
   }

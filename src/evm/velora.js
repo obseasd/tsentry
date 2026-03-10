@@ -3,6 +3,7 @@
 // Supports: Ethereum, Arbitrum, Polygon, BSC, Base, Optimism, Avalanche, Fantom
 
 import VeloraProtocolEvm from '@tetherto/wdk-protocol-swap-velora-evm'
+import { constructSimpleSDK } from '@velora-dex/sdk'
 import { ethers } from 'ethers'
 
 // Chains supported by Velora (via ParaSwap API)
@@ -18,6 +19,7 @@ export class VeloraSwap {
   constructor (config) {
     this.wdkAccount = config.wdkAccount
     this.tokens = config.tokens
+    this.signer = config.signer || null // ethers.js signer for direct tx
     this.velora = null
     this._chainId = null
   }
@@ -36,6 +38,11 @@ export class VeloraSwap {
         : provider
       const network = await rpcProvider.getNetwork()
       this._chainId = Number(network.chainId)
+    }
+
+    // Direct ParaSwap SDK for quotes (WDK module omits srcDecimals/destDecimals)
+    if (this._chainId) {
+      this._paraswap = constructSimpleSDK({ fetch, chainId: this._chainId })
     }
 
     return this
@@ -60,29 +67,29 @@ export class VeloraSwap {
     if (!tokenIn) throw new Error(`Unknown token: ${tokenInSymbol}`)
     if (!tokenOut) throw new Error(`Unknown token: ${tokenOutSymbol}`)
 
-    const options = {
-      tokenIn: tokenIn.address,
-      tokenOut: tokenOut.address
-    }
+    // Use direct ParaSwap SDK with srcDecimals/destDecimals (WDK module omits them)
+    const amountWei = side === 'sell'
+      ? ethers.parseUnits(amount.toString(), tokenIn.decimals).toString()
+      : ethers.parseUnits(amount.toString(), tokenOut.decimals).toString()
 
-    if (side === 'sell') {
-      options.tokenInAmount = ethers.parseUnits(amount.toString(), tokenIn.decimals)
-    } else {
-      options.tokenOutAmount = ethers.parseUnits(amount.toString(), tokenOut.decimals)
-    }
+    const priceRoute = await this._paraswap.swap.getRate({
+      srcToken: tokenIn.address,
+      destToken: tokenOut.address,
+      amount: amountWei,
+      side: side === 'sell' ? 'SELL' : 'BUY',
+      srcDecimals: tokenIn.decimals,
+      destDecimals: tokenOut.decimals
+    })
 
-    const result = await this.velora.quoteSwap(options)
-
-    const amountIn = parseFloat(ethers.formatUnits(result.tokenInAmount, tokenIn.decimals))
-    const amountOut = parseFloat(ethers.formatUnits(result.tokenOutAmount, tokenOut.decimals))
+    const amountIn = parseFloat(ethers.formatUnits(priceRoute.srcAmount, tokenIn.decimals))
+    const amountOut = parseFloat(ethers.formatUnits(priceRoute.destAmount, tokenOut.decimals))
 
     return {
       tokenIn: tokenInSymbol,
       tokenOut: tokenOutSymbol,
       amountIn: side === 'sell' ? amount : amountIn,
       amountOut: side === 'sell' ? amountOut : amount,
-      fee: parseFloat(ethers.formatEther(result.fee)),
-      feeWei: result.fee.toString(),
+      gasCost: priceRoute.gasCost || '0',
       provider: 'velora'
     }
   }
@@ -102,24 +109,60 @@ export class VeloraSwap {
 
     const amountInWei = ethers.parseUnits(amount.toString(), tokenIn.decimals)
 
-    // Approve token spending to Velora (via WDK account)
-    // First get the swap tx to find the spender (Velora proxy contract)
-    // The WDK Velora module handles approval internally via account.approve()
-
-    const result = await this.velora.swap({
-      tokenIn: tokenIn.address,
-      tokenOut: tokenOut.address,
-      tokenInAmount: amountInWei
+    // Get price route with decimals (direct ParaSwap SDK)
+    const priceRoute = await this._paraswap.swap.getRate({
+      srcToken: tokenIn.address,
+      destToken: tokenOut.address,
+      amount: amountInWei.toString(),
+      side: 'SELL',
+      srcDecimals: tokenIn.decimals,
+      destDecimals: tokenOut.decimals
     })
 
-    const amountOut = parseFloat(ethers.formatUnits(result.tokenOutAmount, tokenOut.decimals))
+    // Build swap tx via ParaSwap
+    const address = await this.wdkAccount.getAddress()
+    const swapTx = await this._paraswap.swap.buildTx({
+      srcToken: priceRoute.srcToken,
+      destToken: priceRoute.destToken,
+      srcAmount: priceRoute.srcAmount,
+      destAmount: priceRoute.destAmount,
+      srcDecimals: tokenIn.decimals,
+      destDecimals: tokenOut.decimals,
+      userAddress: address,
+      priceRoute,
+      partner: 'wdk'
+    }, { ignoreChecks: true })
+
+    // Approve token spending if needed
+    const signer = this.signer
+    if (!signer) throw new Error('No ethers.js signer available — pass signer in VeloraSwap config')
+    const tokenContract = new ethers.Contract(tokenIn.address, [
+      'function allowance(address,address) view returns (uint256)',
+      'function approve(address,uint256) returns (bool)'
+    ], signer)
+
+    const allowance = await tokenContract.allowance(address, swapTx.to)
+    if (allowance < amountInWei) {
+      const approveTx = await tokenContract.approve(swapTx.to, ethers.MaxUint256)
+      await approveTx.wait()
+    }
+
+    // Send swap transaction
+    const tx = await signer.sendTransaction({
+      to: swapTx.to,
+      data: swapTx.data,
+      value: swapTx.value ? BigInt(swapTx.value) : 0n,
+      gasLimit: swapTx.gas ? BigInt(swapTx.gas) : undefined
+    })
+    const receipt = await tx.wait()
+
+    const amountOut = parseFloat(ethers.formatUnits(priceRoute.destAmount, tokenOut.decimals))
 
     return {
-      tx: result.hash,
+      tx: receipt.hash,
       amountIn: amount,
       amountOut,
-      fee: parseFloat(ethers.formatEther(result.fee)),
-      feeWei: result.fee.toString(),
+      gasUsed: receipt.gasUsed?.toString(),
       tokenIn: tokenInSymbol,
       tokenOut: tokenOutSymbol,
       provider: 'velora'

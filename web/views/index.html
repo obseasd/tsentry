@@ -173,14 +173,16 @@
 
     /* Action log */
     .log-entry {
-      font-size: 0.75rem; padding: 0.45rem 0.5rem; margin: 0 -0.5rem;
+      font-size: 0.75rem; padding: 0.3rem 0.5rem; margin: 0 -0.5rem;
       border-bottom: 1px solid #ffffff06; border-radius: 4px;
-      display: grid; grid-template-columns: 120px 80px 1fr; gap: 0.5rem;
+      display: grid; grid-template-columns: 58px 130px 1fr; gap: 0.5rem; align-items: baseline;
       transition: background 0.15s;
     }
     .log-entry:hover { background: #ffffff06; }
-    .log-entry .ts { color: var(--muted-dim); font-size: 0.7rem; }
+    .log-entry .ts { color: var(--muted-dim); font-size: 0.65rem; }
+    .log-entry .log-type { display: flex; align-items: center; gap: 0.3rem; white-space: nowrap; }
     .log-entry .type { font-weight: 600; font-size: 0.7rem; }
+    .log-entry .log-msg { font-size: 0.7rem; color: var(--muted); line-height: 1.4; }
     .log-entry .type.init, .log-entry .type.start { color: var(--green); }
     .log-entry .type.strategy { color: var(--blue); }
     .log-entry .type.execute, .log-entry .type.execute_done { color: var(--purple); }
@@ -464,7 +466,7 @@
       .card { padding: 1rem; }
       .card .value { font-size: 1.4rem; }
       .card .value.sm { font-size: 1.1rem; }
-      .log-entry { grid-template-columns: 1fr; gap: 0.2rem; }
+      .log-entry { grid-template-columns: 60px auto 1fr; gap: 0.3rem; }
       .controls button { padding: 0.35rem 0.6rem; font-size: 0.7rem; }
       .quick-form { flex-direction: column; }
       .quick-form input { width: 100% !important; }
@@ -1439,8 +1441,8 @@
             const icons = { init: 'I', execute: 'X', alert: '!', error: 'E', llm: 'AI', nlp: 'NL', strategy: 'S' };
             return `<div class="log-entry">
               <span class="ts">${new Date(a.ts).toLocaleTimeString()}</span>
-              <span class="type ${a.type}"><span class="type-icon ${iconClass}">${icons[iconClass] || 'I'}</span>${a.type}</span>
-              <span>${a.message}</span>
+              <span class="log-type"><span class="type-icon ${iconClass}">${icons[iconClass] || 'I'}</span><span class="type ${a.type}">${a.type}</span></span>
+              <span class="log-msg">${a.message}</span>
             </div>`;
           }).join('');
         }
@@ -1450,7 +1452,7 @@
         const swapSec = document.getElementById('swapSection');
         if (swapData.pairs?.length > 0) {
           pairsEl.innerHTML = swapData.pairs.map(p =>
-            `<span class="tag wallet" style="margin:0.15rem 0">${p.tokenA}/${p.tokenB} <span style="color:var(--muted);font-size:0.6rem">${p.fee / 10000}%</span></span>`
+            `<span class="tag wallet" style="margin:0.15rem 0">${p.tokenA}/${p.tokenB}${typeof p.fee === 'number' ? ` <span style="color:var(--muted);font-size:0.6rem">${p.fee / 10000}%</span>` : ''}</span>`
           ).join('');
           swapSec.classList.remove('swap-no-liquidity');
         } else {
@@ -2102,6 +2104,7 @@
       }).join('');
     }
 
+    // Credit Score
     // Init
     refresh();
     refreshRules();
