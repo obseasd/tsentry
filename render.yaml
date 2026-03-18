@@ -10,6 +10,8 @@ services:
         value: production
       - key: PORT
         value: "3000"
+      - key: DEMO_MODE
+        value: "true"
       - key: WDK_SEED
         sync: false
       - key: ETH_RPC_URL
