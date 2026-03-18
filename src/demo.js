@@ -191,7 +191,14 @@ export function getDemoRules () {
 
 export function getDemoSwapPairs () {
   return {
-    pairs: ['USDT/USDC', 'USDT/WETH', 'USDT/DAI', 'USDC/WETH', 'USDC/DAI', 'WETH/DAI'],
+    pairs: [
+      { tokenA: 'USDT', tokenB: 'USDC', fee: 500 },
+      { tokenA: 'USDT', tokenB: 'WETH', fee: 3000 },
+      { tokenA: 'USDT', tokenB: 'DAI', fee: 500 },
+      { tokenA: 'USDC', tokenB: 'WETH', fee: 3000 },
+      { tokenA: 'USDC', tokenB: 'DAI', fee: 100 },
+      { tokenA: 'WETH', tokenB: 'DAI', fee: 3000 }
+    ],
     provider: 'velora',
     demo: true
   }
@@ -199,7 +206,21 @@ export function getDemoSwapPairs () {
 
 export function getDemoBridgeChains () {
   return {
-    chains: ['ethereum', 'arbitrum', 'base', 'optimism', 'polygon', 'berachain', 'ink', 'unichain', 'sei', 'mantle', 'scroll', 'linea', 'zksync', 'blast', 'mode', 'fraxtal', 'kroma', 'taiko', 'flare', 'iota', 'plume', 'apechain', 'abstract', 'superposition', 'form', 'hemi'],
+    chains: [
+      { name: 'Ethereum', eid: 30101 }, { name: 'Arbitrum', eid: 30110 },
+      { name: 'Base', eid: 30184 }, { name: 'Optimism', eid: 30111 },
+      { name: 'Polygon', eid: 30109 }, { name: 'Berachain', eid: 30362 },
+      { name: 'Ink', eid: 30370 }, { name: 'Unichain', eid: 30371 },
+      { name: 'Sei', eid: 30280 }, { name: 'Mantle', eid: 30181 },
+      { name: 'Scroll', eid: 30214 }, { name: 'Linea', eid: 30183 },
+      { name: 'zkSync', eid: 30165 }, { name: 'Blast', eid: 30243 },
+      { name: 'Mode', eid: 30260 }, { name: 'Fraxtal', eid: 30255 },
+      { name: 'Kroma', eid: 30265 }, { name: 'Taiko', eid: 30274 },
+      { name: 'Flare', eid: 30295 }, { name: 'IOTA', eid: 30284 },
+      { name: 'Plume', eid: 30369 }, { name: 'ApeChain', eid: 30312 },
+      { name: 'Abstract', eid: 30373 }, { name: 'Superposition', eid: 30388 },
+      { name: 'Form', eid: 30391 }, { name: 'Hemi', eid: 30400 }
+    ],
     routes: 26,
     demo: true
   }
@@ -244,11 +265,14 @@ export function getDemoX402Revenue () {
 }
 
 export function getDemoHistory () {
+  const now = Math.floor(Date.now() / 1000)
   return {
     enabled: true,
     transfers: [
-      { type: 'supply', token: 'USDT', amount: '500', hash: '0xdemo1...', timestamp: new Date(Date.now() - 600000).toISOString() },
-      { type: 'swap', tokenIn: 'USDC', tokenOut: 'WETH', amountIn: '100', amountOut: '0.038', hash: '0xdemo2...', timestamp: new Date(Date.now() - 1200000).toISOString() }
+      { from: DEMO_ADDRESS, to: '0xPool...Aave', value: '500000000', tokenSymbol: 'USDT', timestamp: now - 600 },
+      { from: DEMO_ADDRESS, to: '0xUniswap...Router', value: '100000000', tokenSymbol: 'USDC', timestamp: now - 1200 },
+      { from: '0xFaucet...Sepolia', to: DEMO_ADDRESS, value: '2000000000', tokenSymbol: 'USDT', timestamp: now - 3600 },
+      { from: DEMO_ADDRESS, to: '0xPool...Aave', value: '2000000000', tokenSymbol: 'USDT', timestamp: now - 5400 }
     ],
     demo: true
   }
