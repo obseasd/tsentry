@@ -39,6 +39,7 @@
     "@tetherto/wdk-protocol-swap-velora-evm": "^1.0.0-beta.4",
     "@tetherto/wdk-wallet-btc": "^1.0.0-beta.5",
     "@tetherto/wdk-wallet-evm": "^1.0.0-beta.8",
+    "@velora-dex/sdk": "^9.3.5",
     "dotenv": "^16.6.1",
     "ethers": "^6.16.0",
     "express": "^4.22.1",
