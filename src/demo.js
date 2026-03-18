@@ -69,10 +69,18 @@ export function getDemoPortfolio () {
   return {
     balances: demoBalances,
     supplied: demoSupplied,
-    aaveAccount: { totalCollateralBase: 3000e8, totalDebtBase: 0, availableBorrowsBase: 2400e8, healthFactor: '115792089237316195423570985008687907853269984665640564039457584007913129639935' },
-    aaveAPYs: demoAPYs,
-    portfolio: { walletUSD: walletUSD.toFixed(2), suppliedUSD: suppliedUSD.toFixed(2), totalUSD: totalPortfolio().toFixed(2) },
-    prices: demoPrices,
+    aaveAccount: { totalCollateralBase: 3000e8, totalCollateralUSD: 3000, totalDebtBase: 0, availableBorrowsBase: 2400e8, ltv: 0, healthFactor: '115792089237316195423570985008687907853269984665640564039457584007913129639935' },
+    aaveAPYs: {
+      USDT: { supplyAPY: demoAPYs.USDT, variableBorrowAPY: 6.12 },
+      USDC: { supplyAPY: demoAPYs.USDC, variableBorrowAPY: 5.84 },
+      DAI: { supplyAPY: demoAPYs.DAI, variableBorrowAPY: 6.55 },
+      WETH: { supplyAPY: demoAPYs.WETH, variableBorrowAPY: 3.21 }
+    },
+    portfolio: { walletUSD: walletUSD, suppliedUSD: suppliedUSD, totalUSD: totalPortfolio() },
+    prices: {
+      ETH: { usd: demoPrices.ETH }, USDT: { usd: 1.0 }, USDC: { usd: 1.0 },
+      DAI: { usd: 1.0 }, WETH: { usd: demoPrices.WETH }
+    },
     lendingPct: 80,
     demo: true
   }
