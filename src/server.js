@@ -12,10 +12,12 @@ import { RevenueTracker, revenueMiddleware } from './x402/revenue.js'
 import { USDT0_ADDRESSES } from '@t402/wdk'
 import { createIndexer } from './evm/indexer.js'
 import { validateToken, validateAmount, validateAddress, validateChain, VALID_STRATEGIES } from './validation.js'
+import * as demo from './demo.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
 const PORT = process.env.PORT || 3000
+const DEMO = demo.isDemoMode()
 
 // ─── Agent Singleton ───
 const agent = new TreasuryAgent()
@@ -29,6 +31,13 @@ const writeLimiter = rateLimit({ windowMs: 60_000, max: 30, standardHeaders: tru
 const txLimiter = rateLimit({ windowMs: 60_000, max: 10, standardHeaders: true, legacyHeaders: false })
 
 // ─── Middleware ───
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*')
+  res.header('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS')
+  res.header('Access-Control-Allow-Headers', 'Content-Type')
+  if (req.method === 'OPTIONS') return res.sendStatus(204)
+  next()
+})
 app.use(express.static(path.join(__dirname, '..', 'web', 'public')))
 app.use(express.json())
 app.set('views', path.join(__dirname, '..', 'web', 'views'))
@@ -47,6 +56,96 @@ app.use((req, res, next) => {
   }
   next()
 })
+
+// ─── Demo Mode Interceptor ───
+if (DEMO) {
+  console.log('[tsentry] DEMO MODE — all data is simulated')
+
+  // Read endpoints
+  app.get('/api/health', (req, res) => res.json(demo.getDemoHealth()))
+  app.get('/api/status', (req, res) => res.json(demo.getDemoStatus()))
+  app.get('/api/portfolio', (req, res) => res.json(demo.getDemoPortfolio()))
+  app.get('/api/actions', (req, res) => res.json(demo.getDemoActions()))
+  app.get('/api/snapshot', (req, res) => res.json(demo.getDemoSnapshot()))
+  app.get('/api/reasoning', (req, res) => res.json(demo.getDemoReasoning()))
+  app.get('/api/modules', (req, res) => res.json(demo.getDemoModules()))
+  app.get('/api/llm', (req, res) => res.json(demo.getDemoLlm()))
+  app.get('/api/rules', (req, res) => res.json(demo.getDemoRules()))
+  app.get('/api/swap/pairs', (req, res) => res.json(demo.getDemoSwapPairs()))
+  app.get('/api/bridge/chains', (req, res) => res.json(demo.getDemoBridgeChains()))
+  app.get('/api/erc4337', (req, res) => res.json(demo.getDemoErc4337()))
+  app.get('/api/x402', (req, res) => res.json(demo.getDemoX402()))
+  app.get('/api/x402/revenue', (req, res) => res.json(demo.getDemoX402Revenue()))
+  app.get('/api/history', (req, res) => res.json(demo.getDemoHistory()))
+  app.get('/api/indexer', (req, res) => res.json({ enabled: true, demo: true }))
+  app.get('/api/skills', (req, res) => res.json(demo.getDemoSkills()))
+
+  // Credit score — works with any address (demo or connected wallet)
+  app.get('/api/credit-score', (req, res) => {
+    const address = req.query.address || '0x8193e7eCCBDeCb04AAEF4703A6E7fa4975833965'
+    res.json(demo.getDemoCreditScore(address))
+  })
+  app.post('/api/credit-score/assess', (req, res) => {
+    const { borrower, amount, token } = req.body
+    const credit = demo.getDemoCreditScore(borrower)
+    const requestedUSD = parseFloat(amount) || 0
+    const approved = requestedUSD <= credit.maxLoanUSD
+    res.json({
+      ...credit,
+      loanRequest: { amount: requestedUSD, token: token || 'USDT' },
+      approved,
+      reason: approved
+        ? `Approved: score ${credit.score}/100, max loan $${credit.maxLoanUSD}`
+        : `Denied: score ${credit.score}/100, max loan $${credit.maxLoanUSD}, requested $${requestedUSD}`,
+      terms: approved ? { apr: credit.suggestedAPR, maxDuration: credit.score >= 60 ? '30 days' : '14 days', collateralRequired: credit.score >= 80 ? 'none' : '150%' } : null
+    })
+  })
+
+  // Write endpoints — simulate actions
+  app.post('/api/strategy', (req, res) => res.json(demo.handleDemoStrategy(req.body.name)))
+  app.post('/api/start', (req, res) => res.json(demo.handleDemoStart()))
+  app.post('/api/stop', (req, res) => res.json(demo.handleDemoStop()))
+  app.post('/api/pause', (req, res) => res.json(demo.handleDemoPause()))
+  app.post('/api/cycle', (req, res) => res.json(demo.handleDemoCycle()))
+  app.post('/api/refresh', (req, res) => res.json({ ok: true, ...demo.getDemoPortfolio() }))
+  app.post('/api/supply', (req, res) => {
+    const r = demo.handleDemoSupply(req.body.token, req.body.amount)
+    res.status(r.ok ? 200 : 400).json(r)
+  })
+  app.post('/api/withdraw', (req, res) => {
+    const r = demo.handleDemoWithdraw(req.body.token, req.body.amount)
+    res.status(r.ok ? 200 : 400).json(r)
+  })
+  app.post('/api/swap/quote', (req, res) => {
+    const { tokenIn, tokenOut, amount } = req.body
+    const rate = tokenIn === 'WETH' ? 2614.82 : tokenOut === 'WETH' ? 1 / 2614.82 : 1.0
+    res.json({ ok: true, amountIn: amount, amountOut: (parseFloat(amount) * rate).toFixed(6), rate, priceImpact: '0.03%', fee: '0.3%', provider: 'velora', demo: true })
+  })
+  app.post('/api/swap/execute', (req, res) => {
+    res.json({ ok: true, hash: `0xdemo${Date.now().toString(16)}`, amountIn: req.body.amount, amountOut: (parseFloat(req.body.amount) * 0.999).toFixed(4), demo: true })
+  })
+  app.post('/api/bridge/quote', (req, res) => {
+    res.json({ ok: true, amount: req.body.amount, fee: '0.15', estimatedTime: '~2 min', route: 'LayerZero V2', demo: true })
+  })
+  app.post('/api/bridge/quote-all', (req, res) => {
+    res.json({ ok: true, quotes: [{ chain: 'arbitrum', fee: '0.12', time: '~1 min' }, { chain: 'base', fee: '0.15', time: '~2 min' }], demo: true })
+  })
+  app.post('/api/bridge/execute', (req, res) => {
+    res.json({ ok: true, hash: `0xdemo${Date.now().toString(16)}`, targetChain: req.body.targetChain, amount: req.body.amount, demo: true })
+  })
+  app.post('/api/command', (req, res) => {
+    const text = req.body.text || ''
+    res.json({ ok: true, parsed: { action: 'hold' }, result: { message: `Demo mode — command "${text}" acknowledged` }, source: 'demo', demo: true })
+  })
+  app.post('/api/rules', (req, res) => {
+    res.json({ ok: true, rule: { id: `demo-${Date.now()}`, description: req.body.text || 'Demo rule', conditions: [{ type: 'manual' }], actions: [{ type: 'alert' }], oneShot: false, active: true, triggeredCount: 0 }, source: 'demo', demo: true })
+  })
+  app.delete('/api/rules/:id', (req, res) => res.json({ ok: true, demo: true }))
+  app.post('/api/llm/toggle', (req, res) => res.json({ ok: true, llmEnabled: true, connected: true, demo: true }))
+  app.post('/api/llm/reason', (req, res) => {
+    res.json({ ok: true, decision: demo.getDemoReasoning().llm.lastDecision, demo: true })
+  })
+}
 
 // ─── Pages ───
 
@@ -797,6 +896,16 @@ app.get('/api/skills', readLimiter, (req, res) => {
 // ─── Boot ───
 
 async function boot () {
+  // Demo mode — skip agent init, serve dashboard with mock data
+  if (DEMO) {
+    app.listen(PORT, () => {
+      console.log(`[tsentry] DEMO MODE — Dashboard: http://localhost:${PORT}`)
+      console.log(`[tsentry] All API endpoints return simulated data`)
+      console.log(`[tsentry] Connect MetaMask to test credit scoring on any wallet`)
+    })
+    return
+  }
+
   try {
     await agent.init()
     console.log(`[tsentry] Wallet: ${agent.wallet.address}`)

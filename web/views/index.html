@@ -1052,6 +1052,48 @@
       </div>
     </div>
 
+    <!-- Credit Score + Wallet Connect -->
+    <div style="margin-bottom:1.25rem">
+      <div class="card" style="border-color:#bc8cff22;border-top:2px solid var(--purple)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
+          <div style="display:flex;align-items:center;gap:0.5rem">
+            <span style="font-size:1rem">&#128272;</span>
+            <h3 style="margin:0">On-Chain Credit Scoring</h3>
+            <span class="badge" style="font-size:0.55rem;background:var(--purple-bg);color:var(--purple);border:1px solid #bc8cff33">Lending Bot</span>
+          </div>
+          <button onclick="connectWallet()" id="btnConnect" style="padding:0.4rem 1rem;border-radius:8px;border:1px solid #bc8cff44;background:var(--purple-bg);color:var(--purple);cursor:pointer;font-family:inherit;font-size:0.72rem;font-weight:600;transition:all 0.2s">
+            &#129418; Connect Wallet
+          </button>
+        </div>
+        <div style="font-size:0.75rem;color:var(--muted);margin-bottom:0.75rem">
+          Connect MetaMask to score any wallet's on-chain creditworthiness. 5-dimension AI analysis: wallet age, transaction history, balance stability, Aave positions, and health factor.
+        </div>
+        <div id="walletConnected" style="display:none;margin-bottom:0.75rem">
+          <div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.75rem;background:var(--green-bg);border:1px solid #3fb95033;border-radius:8px">
+            <span style="color:var(--green);font-weight:600;font-size:0.75rem">Connected:</span>
+            <span id="connectedAddr" style="font-size:0.72rem;color:var(--text);font-family:monospace"></span>
+            <button onclick="disconnectWallet()" style="margin-left:auto;padding:0.2rem 0.5rem;border-radius:6px;border:1px solid #f8514944;background:transparent;color:var(--red);cursor:pointer;font-size:0.65rem;font-family:inherit">Disconnect</button>
+          </div>
+        </div>
+        <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.75rem">
+          <input type="text" id="creditAddr" placeholder="0x... address (or connect MetaMask)" style="flex:1;padding:0.5rem 0.75rem;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:inherit;font-size:0.75rem">
+          <button onclick="runCreditScore()" id="btnCredit" style="padding:0.5rem 1rem;border-radius:8px;border:1px solid #bc8cff44;background:var(--purple-bg);color:var(--purple);cursor:pointer;font-family:inherit;font-size:0.72rem;font-weight:600;white-space:nowrap">Score Wallet</button>
+        </div>
+        <div id="creditResult"></div>
+      </div>
+    </div>
+
+    <!-- Demo Mode Banner -->
+    <div id="demoBanner" style="display:none;margin-bottom:1.25rem">
+      <div style="padding:0.75rem 1rem;background:#d2992212;border:1px solid #d2992233;border-radius:var(--radius);display:flex;align-items:center;gap:0.75rem">
+        <span style="font-size:1.2rem">&#9888;</span>
+        <div>
+          <div style="font-weight:600;color:var(--yellow);font-size:0.8rem">Demo Mode Active</div>
+          <div style="font-size:0.7rem;color:var(--muted)">All data is simulated. Connect MetaMask to test credit scoring on real wallets. Supply, swap, bridge — all actions work with mock data.</div>
+        </div>
+      </div>
+    </div>
+
     <!-- Footer -->
     <div class="footer">
       <span>Tsentry v1.0 — Autonomous Treasury Agent</span>
@@ -2109,10 +2151,168 @@
       }).join('');
     }
 
-    // Credit Score
+    // ─── Wallet Connect (MetaMask) ───
+
+    let connectedAddress = null;
+
+    async function connectWallet() {
+      if (!window.ethereum) {
+        toast('MetaMask not detected — install MetaMask or paste an address manually', 'error');
+        return;
+      }
+      try {
+        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        if (accounts.length > 0) {
+          connectedAddress = accounts[0];
+          document.getElementById('connectedAddr').textContent = connectedAddress;
+          document.getElementById('walletConnected').style.display = 'block';
+          document.getElementById('creditAddr').value = connectedAddress;
+          document.getElementById('btnConnect').innerHTML = '&#9989; Connected';
+          document.getElementById('btnConnect').style.borderColor = '#3fb95044';
+          document.getElementById('btnConnect').style.color = 'var(--green)';
+          document.getElementById('btnConnect').style.background = 'var(--green-bg)';
+          toast('Wallet connected: ' + connectedAddress.slice(0, 8) + '...', 'success');
+        }
+      } catch (e) {
+        toast('Wallet connection rejected', 'error');
+      }
+    }
+
+    function disconnectWallet() {
+      connectedAddress = null;
+      document.getElementById('walletConnected').style.display = 'none';
+      document.getElementById('creditAddr').value = '';
+      document.getElementById('btnConnect').innerHTML = '&#129418; Connect Wallet';
+      document.getElementById('btnConnect').style.borderColor = '#bc8cff44';
+      document.getElementById('btnConnect').style.color = 'var(--purple)';
+      document.getElementById('btnConnect').style.background = 'var(--purple-bg)';
+      toast('Wallet disconnected', 'info');
+    }
+
+    // Listen for account changes
+    if (window.ethereum) {
+      window.ethereum.on('accountsChanged', (accounts) => {
+        if (accounts.length === 0) { disconnectWallet(); }
+        else {
+          connectedAddress = accounts[0];
+          document.getElementById('connectedAddr').textContent = connectedAddress;
+          document.getElementById('creditAddr').value = connectedAddress;
+        }
+      });
+    }
+
+    // ─── Credit Score ───
+
+    async function runCreditScore() {
+      const addr = document.getElementById('creditAddr').value.trim();
+      if (!addr || !/^0x[a-fA-F0-9]{40}$/.test(addr)) {
+        toast('Enter a valid Ethereum address (0x...)', 'error');
+        return;
+      }
+      const btn = document.getElementById('btnCredit');
+      const result = document.getElementById('creditResult');
+      btn.disabled = true;
+      btn.textContent = 'Scoring...';
+      result.innerHTML = '<div style="color:var(--purple);font-size:0.8rem;padding:0.5rem">Analyzing on-chain data...</div>';
+
+      try {
+        const data = await api('GET', `/api/credit-score?address=${addr}`);
+        if (data.error) {
+          result.innerHTML = `<div style="color:var(--red);font-size:0.8rem;padding:0.5rem">${escHtml(data.error)}</div>`;
+          toast('Credit score failed', 'error');
+          return;
+        }
+
+        const tierColors = { excellent: 'var(--green)', good: 'var(--blue)', fair: 'var(--yellow)', poor: 'var(--red)' };
+        const tierColor = tierColors[data.tier] || 'var(--muted)';
+        const pct = Math.min(100, data.score);
+
+        let html = `
+          <div style="display:grid;grid-template-columns:200px 1fr;gap:1rem;padding:0.75rem 0">
+            <div style="text-align:center">
+              <div style="position:relative;width:140px;height:140px;margin:0 auto">
+                <svg viewBox="0 0 100 100" style="transform:rotate(-90deg)">
+                  <circle cx="50" cy="50" r="42" fill="none" stroke="var(--border)" stroke-width="8"/>
+                  <circle cx="50" cy="50" r="42" fill="none" stroke="${tierColor}" stroke-width="8"
+                    stroke-dasharray="${pct * 2.64} ${264 - pct * 2.64}"
+                    stroke-linecap="round" style="transition:stroke-dasharray 1s ease"/>
+                </svg>
+                <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center">
+                  <div style="font-size:1.8rem;font-weight:700;color:${tierColor}">${data.score}</div>
+                  <div style="font-size:0.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em">${data.tier}</div>
+                </div>
+              </div>
+              <div style="margin-top:0.5rem;font-size:0.7rem;color:var(--muted)">/ 100</div>
+            </div>
+            <div>
+              <div style="font-size:0.72rem;color:var(--muted);margin-bottom:0.5rem">
+                <span style="font-family:monospace;color:var(--text)">${escHtml(addr.slice(0, 8))}...${escHtml(addr.slice(-6))}</span>
+                ${data.demo ? ' <span style="color:var(--yellow)">(simulated)</span>' : ''}
+              </div>
+              <div style="display:flex;flex-direction:column;gap:0.4rem">`;
+
+        // Dimension bars
+        if (data.dimensions) {
+          for (const [key, dim] of Object.entries(data.dimensions)) {
+            const dimPct = Math.round((dim.score / dim.max) * 100);
+            const label = key.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase());
+            html += `
+              <div>
+                <div style="display:flex;justify-content:space-between;font-size:0.68rem;margin-bottom:2px">
+                  <span style="color:var(--text)">${label}</span>
+                  <span style="color:var(--muted)">${dim.score}/${dim.max} — ${escHtml(dim.detail)}</span>
+                </div>
+                <div style="height:6px;background:var(--bg);border-radius:3px;overflow:hidden">
+                  <div style="height:100%;width:${dimPct}%;background:${tierColor};border-radius:3px;transition:width 0.5s ease"></div>
+                </div>
+              </div>`;
+          }
+        }
+
+        html += `</div>
+              <div style="margin-top:0.75rem;padding:0.5rem 0.75rem;background:var(--bg);border-radius:8px;font-size:0.72rem">
+                <div style="display:flex;justify-content:space-between;margin-bottom:0.3rem">
+                  <span style="color:var(--muted)">Max Loan</span>
+                  <span style="color:var(--green);font-weight:600">$${(data.maxLoanUSD || 0).toLocaleString()}</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:0.3rem">
+                  <span style="color:var(--muted)">Suggested APR</span>
+                  <span style="color:var(--text)">${data.suggestedAPR || 0}%</span>
+                </div>
+                <div style="font-size:0.68rem;color:var(--muted);margin-top:0.3rem;font-style:italic">${escHtml(data.recommendation || '')}</div>
+              </div>
+            </div>
+          </div>`;
+
+        result.innerHTML = html;
+        toast(`Credit score: ${data.score}/100 (${data.tier})`, 'success');
+      } catch (e) {
+        result.innerHTML = `<div style="color:var(--red);font-size:0.8rem;padding:0.5rem">Error: ${escHtml(e.message)}</div>`;
+        toast('Credit score error', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Score Wallet';
+      }
+    }
+
+    // ─── Demo Mode Banner ───
+    async function checkDemoMode() {
+      try {
+        const h = await api('GET', '/api/health');
+        if (h.demo) {
+          document.getElementById('demoBanner').style.display = 'block';
+          // Move banner to top
+          const container = document.querySelector('.container');
+          const banner = document.getElementById('demoBanner');
+          container.insertBefore(banner, container.children[1]);
+        }
+      } catch {}
+    }
+
     // Init
     refresh();
     refreshRules();
+    checkDemoMode();
     setInterval(refresh, 8000);
     setInterval(refreshRules, 15000);
   </script>
