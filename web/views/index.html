@@ -659,10 +659,78 @@
     /* No-liquidity swap dim */
     .swap-no-liquidity { opacity: 0.5; }
     .swap-no-liquidity .quick-form { pointer-events: none; }
+
+    /* Announcement marquee */
+    .announcement-banner {
+      width: 100%;
+      height: 32px;
+      background: linear-gradient(90deg, #0a0e14 0%, #161b22 50%, #0a0e14 100%);
+      border-bottom: 1px solid #3fb95044;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+    }
+    .announcement-track {
+      display: flex;
+      gap: 48px;
+      white-space: nowrap;
+      animation: announcement-scroll 30s linear infinite;
+      will-change: transform;
+    }
+    .announcement-item {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--green);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      flex-shrink: 0;
+    }
+    @keyframes announcement-scroll {
+      from { transform: translateX(0); }
+      to { transform: translateX(-50%); }
+    }
+
+    /* X (Twitter) header link */
+    .btn-x {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      text-decoration: none;
+      transition: all 0.2s ease;
+    }
+    .btn-x:hover {
+      background: var(--card-hover);
+      color: var(--text-bright);
+      border-color: var(--border-light);
+      transform: translateY(-1px);
+    }
+    .btn-x svg { display: block; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 </head>
 <body>
+  <!-- Announcement marquee -->
+  <div class="announcement-banner" aria-label="Tether hackathon winner 0bsedev">
+    <div class="announcement-track">
+      <span class="announcement-item">🏆 Tether hackathon winner 0bsedev</span>
+      <span class="announcement-item">🏆 Tether hackathon winner 0bsedev</span>
+      <span class="announcement-item">🏆 Tether hackathon winner 0bsedev</span>
+      <span class="announcement-item">🏆 Tether hackathon winner 0bsedev</span>
+      <span class="announcement-item">🏆 Tether hackathon winner 0bsedev</span>
+      <span class="announcement-item">🏆 Tether hackathon winner 0bsedev</span>
+      <span class="announcement-item">🏆 Tether hackathon winner 0bsedev</span>
+      <span class="announcement-item">🏆 Tether hackathon winner 0bsedev</span>
+    </div>
+  </div>
+
   <div class="toast-container" id="toasts"></div>
   <div class="container">
     <!-- Header -->
@@ -672,7 +740,11 @@
         <h1>Tsentry</h1>
         <div class="header-sep"></div>
         <span class="badge idle" id="statusBadge">loading</span>
-        <span class="badge" id="x402Badge" style="display:none;background:#f0883e12;color:var(--orange);border:1px solid #f0883e33;font-size:0.6rem">x402</span>
+        <a href="https://x.com/0bsedev" target="_blank" rel="noopener noreferrer" class="btn-x" aria-label="Follow on X / Twitter">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+          </svg>
+        </a>
         <span class="next-check" id="nextCheckBadge" style="display:none">
           <span>Next:</span><span class="countdown" id="nextCheckCountdown">—</span>
         </span>
@@ -1226,13 +1298,10 @@
           }
         }
 
-        // x402 badge + status + section
-        const x402Badge = document.getElementById('x402Badge');
+        // x402 status + section (header badge moved to X profile link)
         fetch('/api/x402').then(r => r.json()).then(x402 => {
           const x402Wrap = document.getElementById('x402Wrapper');
           if (x402.enabled) {
-            x402Badge.style.display = '';
-            x402Badge.title = `x402: ${x402.network} — ${x402.routes?.length || 0} gated routes`;
             document.getElementById('x402Status').innerHTML = `<span style="color:var(--orange)">Active</span> <span style="color:var(--muted-dim)">(${x402.network})</span>`;
             document.getElementById('x402SectionStatus').innerHTML = `<span style="color:var(--green)">ACTIVE</span>`;
             document.getElementById('x402SectionBadge').style.background = '#3fb95015';
@@ -1245,7 +1314,6 @@
             }
             if (x402Wrap) x402Wrap.classList.add('active-mainnet');
           } else {
-            x402Badge.style.display = 'none';
             document.getElementById('x402Status').textContent = 'Inactive';
             document.getElementById('x402SectionStatus').innerHTML = `<span style="color:var(--muted)">INACTIVE</span> <span style="color:var(--muted-dim);font-size:0.6rem">Mainnet only (USDT0)</span>`;
             document.getElementById('x402Network').textContent = 'Not configured';
